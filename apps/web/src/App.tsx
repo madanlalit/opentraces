@@ -4,21 +4,6 @@ import { Show, SignInButton, UserButton } from "@clerk/react";
 /*  Shared bits                                                        */
 /* ------------------------------------------------------------------ */
 
-function LogoMark({ className = "h-6 w-6" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
-      <rect x="1" y="1" width="22" height="22" rx="6" className="fill-neutral-800" />
-      <polyline
-        points="4,15 8,15 10,9 13,17 15,12 17,12 20,7"
-        stroke="white"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function Wordmark() {
   return <span className="font-semibold tracking-tight">opentraces</span>;
 }
@@ -47,7 +32,6 @@ function Nav() {
     <header className="sticky top-0 z-40 border-b border-neutral-800/60 bg-neutral-950/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
         <a href="#" className="flex items-center gap-2">
-          <LogoMark />
           <Wordmark />
         </a>
         <nav className="flex items-center gap-6 text-sm text-neutral-400">
@@ -262,7 +246,6 @@ function Footer() {
     <footer className="border-t border-neutral-800/60">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-8 text-sm text-neutral-500">
         <div className="flex items-center gap-2">
-          <LogoMark className="h-5 w-5" />
           <span>opentraces</span>
           <span>© 2026</span>
         </div>
