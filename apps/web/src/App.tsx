@@ -778,6 +778,14 @@ function Dashboard() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<"new" | "steps" | "cost">("new");
+  const [packs, setPacks] = useState<MyPack[] | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [packTitle, setPackTitle] = useState("");
+  const [packPrice, setPackPrice] = useState("29");
+  const [packTags, setPackTags] = useState("");
+  const [packBusy, setPackBusy] = useState(false);
+  const [packMsg, setPackMsg] = useState<string | null>(null);
   // Best available name: first name, then full name, username, email prefix.
   const first =
     user?.firstName ??
@@ -801,6 +809,13 @@ function Dashboard() {
         if (!cancelled) {
           setTraces(data.traces ?? []);
           setError(null);
+        }
+        const pres = await fetch(`${API_URL}/v1/my/packs`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (pres.ok && !cancelled) {
+          const pdata = (await pres.json()) as { packs?: MyPack[] };
+          setPacks(pdata.packs ?? []);
         }
       } catch (e) {
         if (!cancelled) {
@@ -836,6 +851,59 @@ function Dashboard() {
           : b.created_at.localeCompare(a.created_at)
     );
   })();
+
+  const readyTraces = (traces ?? []).filter((t) => t.status === "scrubbed");
+
+  const createPack = async () => {
+    setPackBusy(true);
+    setPackMsg(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("no session");
+      const res = await fetch(`${API_URL}/v1/packs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: packTitle,
+          price_cents: Math.round(parseFloat(packPrice || "0") * 100),
+          tags: packTags.split(",").map((t) => t.trim()).filter(Boolean),
+          trace_ids: [...selected],
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; pack_id?: string };
+      if (!res.ok) throw new Error(body.error ?? `failed (${res.status})`);
+      setPackMsg(`Pack created as draft. Publish it below to list it on the marketplace.`);
+      setCreateOpen(false);
+      setSelected(new Set());
+      setPackTitle("");
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      setPackMsg(e instanceof Error ? e.message : "something went wrong");
+    } finally {
+      setPackBusy(false);
+    }
+  };
+
+  const packAction = async (id: string, action: "publish" | "delist") => {
+    setPackBusy(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("no session");
+      const res = await fetch(`${API_URL}/v1/packs/${id}/${action}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `failed (${res.status})`);
+      }
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      setPackMsg(e instanceof Error ? e.message : "something went wrong");
+    } finally {
+      setPackBusy(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -938,6 +1006,154 @@ function Dashboard() {
                 </p>
               </>
             )}
+          </div>
+        </div>
+
+        {/* packs: create + list */}
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 py-16">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <Eyebrow>Sell</Eyebrow>
+                <h2 className="mt-4 text-2xl font-semibold tracking-tight">Your packs</h2>
+              </div>
+              {readyTraces.length > 0 && !createOpen && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setCreateOpen(true);
+                    setPackMsg(null);
+                  }}
+                >
+                  Create pack
+                </Button>
+              )}
+            </div>
+
+            {createOpen && (
+              <div className="mt-8 border border-border p-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-xs font-medium tracking-[0.15em] text-muted-foreground uppercase">
+                      Pack title
+                    </span>
+                    <input
+                      value={packTitle}
+                      onChange={(e) => setPackTitle(e.target.value)}
+                      placeholder="pi sessions: real bug fixes"
+                      className="mt-1 w-full border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <label className="block">
+                      <span className="text-xs font-medium tracking-[0.15em] text-muted-foreground uppercase">
+                        Price (USD)
+                      </span>
+                      <input
+                        value={packPrice}
+                        onChange={(e) => setPackPrice(e.target.value)}
+                        inputMode="decimal"
+                        className="mt-1 w-full border border-input bg-background px-3 py-2 text-sm tabular-nums outline-none focus:border-ring"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-medium tracking-[0.15em] text-muted-foreground uppercase">
+                        Tags
+                      </span>
+                      <input
+                        value={packTags}
+                        onChange={(e) => setPackTags(e.target.value)}
+                        placeholder="bugfix, testing"
+                        className="mt-1 w-full border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div className="mt-5">
+                  <span className="text-xs font-medium tracking-[0.15em] text-muted-foreground uppercase">
+                    Ready traces ({readyTraces.length})
+                  </span>
+                  <div className="mt-2 max-h-56 space-y-1 overflow-y-auto border border-border p-2">
+                    {readyTraces.map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex cursor-pointer items-center gap-3 px-2 py-1.5 text-sm hover:bg-accent/50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.has(t.id)}
+                          onChange={(e) => {
+                            const next = new Set(selected);
+                            if (e.target.checked) next.add(t.id);
+                            else next.delete(t.id);
+                            setSelected(next);
+                          }}
+                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          {t.task_desc ?? t.repo_url ?? t.id}
+                        </span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{t.n_steps} steps</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {packMsg && <p className="mt-3 text-sm text-muted-foreground">{packMsg}</p>}
+                <div className="mt-5 flex gap-3">
+                  <Button
+                    size="sm"
+                    onClick={createPack}
+                    disabled={packBusy || selected.size === 0 || !packTitle.trim()}
+                  >
+                    {packBusy ? "Creating…" : `Create draft pack (${selected.size})`}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setCreateOpen(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-8 grid gap-6 md:grid-cols-2">
+              {(packs ?? []).map((p) => (
+                <div key={p.id} className="border border-border p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="font-medium text-balance">{p.title}</h3>
+                    <Badge variant={p.status === "live" ? "default" : "outline"}>
+                      {p.status === "live" ? "Live" : p.status === "draft" ? "Draft" : "Delisted"}
+                    </Badge>
+                  </div>
+                  <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
+                    <span>{p.traces.length} traces</span>
+                    <span>{money(p.price_cents)}</span>
+                    <span>{p.license}</span>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {p.status === "draft" && (
+                      <Button size="sm" variant="outline" disabled={packBusy} onClick={() => packAction(p.id, "publish")}>
+                        Publish to marketplace
+                      </Button>
+                    )}
+                    {p.status === "live" && (
+                      <>
+                        <Button size="sm" variant="outline" asChild>
+                          <a href={`/marketplace/${p.id}`}>View listing</a>
+                        </Button>
+                        <Button size="sm" variant="ghost" disabled={packBusy} onClick={() => packAction(p.id, "delist")}>
+                          Delist
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {packs !== null && packs.length === 0 && !createOpen && (
+                <p className="text-sm text-muted-foreground">
+                  No packs yet. Create one from your Ready traces and publish it
+                  to the public marketplace.
+                </p>
+              )}
+            </div>
+            {packMsg && !createOpen && <p className="mt-4 text-sm text-muted-foreground">{packMsg}</p>}
           </div>
         </div>
       </main>
@@ -1332,6 +1548,256 @@ function TraceDetail({ id }: { id: string }) {
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Marketplace — public pack index + detail                           */
+/* ------------------------------------------------------------------ */
+
+type PackRow = {
+  id: string;
+  title: string;
+  tags: string[];
+  license: string;
+  price_cents: number;
+  status: string;
+  created_at: string;
+  org_name: string;
+  trace_count: number;
+  step_count: number;
+};
+
+type PackTrace = {
+  id: string;
+  agent: string;
+  model: string | null;
+  n_steps: number;
+  cost_usd: number | null;
+};
+
+type MyPack = PackRow & { traces: { id: string; status: string; n_steps: number }[] };
+
+function money(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function PackCard({ pack, onOpen }: { pack: PackRow; onOpen?: (id: string) => void }) {
+  return (
+    <div
+      onClick={() => onOpen?.(pack.id)}
+      className={cn(
+        "flex flex-col border border-border p-6 transition-colors",
+        onOpen && "cursor-pointer hover:border-neutral-400"
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-lg font-medium text-balance">{pack.title}</h3>
+        <span className="shrink-0 text-lg font-semibold tabular-nums">{money(pack.price_cents)}</span>
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">by {pack.org_name}</div>
+      {pack.tags.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {pack.tags.map((tag) => (
+            <span key={tag} className="border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
+        <span>{pack.trace_count} traces</span>
+        <span>{pack.step_count.toLocaleString()} steps</span>
+        <span className="ml-auto">{pack.license} license</span>
+      </div>
+    </div>
+  );
+}
+
+function MarketplacePage() {
+  const [packs, setPacks] = useState<PackRow[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_URL}/v1/packs`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setPacks(d.packs ?? []))
+      .catch(() => setError(true));
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <HowNav />
+      <main>
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 pt-20 pb-20 text-center">
+            <Eyebrow>Marketplace</Eyebrow>
+            <h1 className="mx-auto mt-4 max-w-2xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+              Verified agent traces, ready for training
+            </h1>
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+              Every pack is scrubbed, quality-gated, and pinned to real
+              repositories. One open format, any agent, any model.
+            </p>
+          </div>
+        </div>
+
+        <div className="mx-auto max-w-5xl px-6 py-16">
+          {error ? (
+            <p className="text-center text-sm text-muted-foreground">Could not load the marketplace.</p>
+          ) : packs === null ? (
+            <p className="text-center text-sm text-muted-foreground">Loading packs…</p>
+          ) : packs.length === 0 ? (
+            <div className="py-16 text-center">
+              <p className="text-sm text-muted-foreground">
+                First packs are being curated right now. Check back shortly, or
+                email labs@opentraces.dev for early access.
+              </p>
+              <div className="mt-6">
+                <Button variant="outline" asChild>
+                  <Link to="/">Back to homepage</Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2">
+              {packs.map((p) => (
+                <MarketLink key={p.id} id={p.id}>
+                  <PackCard pack={p} />
+                </MarketLink>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+function MarketLink({ id, children }: { id: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={`/marketplace/${id}`}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        navigate(`/marketplace/${id}`);
+      }}
+      className="block"
+    >
+      {children}
+    </a>
+  );
+}
+
+function PackDetailPage({ id }: { id: string }) {
+  const [data, setData] = useState<{ pack: PackRow; traces: PackTrace[] } | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_URL}/v1/packs/${id}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(setData)
+      .catch(() => setError(true));
+  }, [id]);
+
+  const p = data?.pack;
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <HowNav />
+      <main>
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-4xl px-6 pt-10 pb-10">
+            <Button variant="ghost" size="sm" className="-ml-2" asChild>
+              <Link to="/marketplace">
+                <ArrowRight className="rotate-180" />
+                Marketplace
+              </Link>
+            </Button>
+            {error ? (
+              <p className="mt-6 text-sm text-muted-foreground">This pack is not available.</p>
+            ) : data === null ? (
+              <p className="mt-6 text-sm text-muted-foreground">Loading pack…</p>
+            ) : p ? (
+              <>
+                <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+                      {p.title}
+                    </h1>
+                    <div className="mt-1 text-sm text-muted-foreground">by {p.org_name}</div>
+                  </div>
+                  <span className="text-2xl font-semibold tabular-nums">{money(p.price_cents)}</span>
+                </div>
+                {p.tags.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    {p.tags.map((tag) => (
+                      <span key={tag} className="border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-muted-foreground tabular-nums">
+                  <span>{p.trace_count} traces</span>
+                  <span>{p.step_count.toLocaleString()} steps</span>
+                  <span>{p.license} license</span>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        {p && (
+          <div className="mx-auto max-w-4xl px-6 py-12">
+            <h2 className="text-sm font-medium">What is inside</h2>
+            <div className="mt-4 overflow-hidden rounded-xl border border-border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-secondary text-left text-xs font-medium text-muted-foreground">
+                    <th className="px-4 py-2.5 font-medium">Trace</th>
+                    <th className="px-4 py-2.5 font-medium">Agent</th>
+                    <th className="px-4 py-2.5 font-medium">Model</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Steps</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.traces.map((t) => (
+                    <tr key={t.id} className="border-b border-border last:border-0">
+                      <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{t.id}</td>
+                      <td className="px-4 py-2.5">{t.agent}</td>
+                      <td className="max-w-48 truncate px-4 py-2.5 font-mono text-xs text-muted-foreground">
+                        {t.model ?? "–"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{t.n_steps}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-10 rounded-xl border border-border p-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <div className="text-lg font-semibold">Buy this pack</div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Checkout launches soon. For early access, email us and we
+                    will set you up manually.
+                  </p>
+                </div>
+                <Button asChild>
+                  <a href={`mailto:labs@opentraces.dev?subject=Pack access: ${encodeURIComponent(p.title)}`}>
+                    Buy for {money(p.price_cents)}
+                  </a>
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+      <Footer />
     </div>
   );
 }
@@ -1779,6 +2245,15 @@ function Routes() {
 
   if (path === "/how") {
     return <HowPage />;
+  }
+
+  if (path === "/marketplace") {
+    return <MarketplacePage />;
+  }
+
+  const packMatch = path.match(/^\/marketplace\/([A-Za-z0-9_]+)$/);
+  if (packMatch) {
+    return <PackDetailPage id={packMatch[1]} />;
   }
 
   return <Landing />;

@@ -67,6 +67,12 @@ app.get("/v1/health", (c) => c.json({ ok: true, service: "opentraces-api" }));
 
 app.use("/v1/*", async (c, next) => {
   if (c.req.path === "/v1/health") return next();
+  // Public marketplace reads (GET only): live packs + pack detail.
+  if (
+    c.req.method === "GET" &&
+    (c.req.path === "/v1/packs" || /^\/v1\/packs\//.test(c.req.path))
+  )
+    return next();
   // device code + poll are public by design (that's the whole point of the flow);
   // approve does its own Clerk JWT check inside the handler.
   if (c.req.path.startsWith("/v1/device/")) return next();
@@ -116,6 +122,151 @@ app.use("/v1/*", async (c, next) => {
 
   // TODO: rate limiting per key.
   return c.json({ error: "unsupported authorization scheme" }, 401);
+});
+
+// ---------------------------------------------------------------------------
+// Packs — seller CRUD (Clerk JWT) + public marketplace reads (no auth).
+// Public detail exposes trace stats only (agent/model/steps), never task text.
+// ---------------------------------------------------------------------------
+
+const PACK_SELECT = `
+  SELECT p.id, p.title, p.tags, p.license, p.price_cents, p.status, p.created_at,
+         o.name AS org_name,
+         (SELECT COUNT(*) FROM pack_items pi JOIN traces t ON t.id = pi.trace_id
+           WHERE pi.pack_id = p.id) AS trace_count,
+         (SELECT COALESCE(SUM(t.n_steps), 0) FROM pack_items pi JOIN traces t ON t.id = pi.trace_id
+           WHERE pi.pack_id = p.id) AS step_count
+  FROM packs p JOIN orgs o ON o.id = p.org_id`;
+
+app.get("/v1/packs", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `${PACK_SELECT} WHERE p.status = 'live' ORDER BY p.created_at DESC LIMIT 100`
+  ).all();
+  const packs = (results as Record<string, unknown>[]).map((p) => ({
+    ...p,
+    tags: JSON.parse((p.tags as string) ?? "[]"),
+  }));
+  return c.json({ packs });
+});
+
+app.get("/v1/packs/:id", async (c) => {
+  const pack = await c.env.DB.prepare(
+    `${PACK_SELECT} WHERE p.id = ? AND p.status = 'live'`
+  )
+    .bind(c.req.param("id"))
+    .first<Record<string, unknown>>();
+  if (!pack) return c.json({ error: "not found" }, 404);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT t.id, t.agent, t.model, t.n_steps, t.cost_usd
+     FROM pack_items pi JOIN traces t ON t.id = pi.trace_id WHERE pi.pack_id = ?`
+  )
+    .bind(pack.id)
+    .all();
+  return c.json({ pack: { ...pack, tags: JSON.parse((pack.tags as string) ?? "[]") }, traces: results });
+});
+
+app.get("/v1/my/packs", async (c) => {
+  const orgId = c.get("orgId");
+  const { results } = await c.env.DB.prepare(
+    `${PACK_SELECT} WHERE p.org_id = ? ORDER BY p.created_at DESC`
+  )
+    .bind(orgId)
+    .all<{ id: string; tags: string }>();
+  const packs = [];
+  for (const p of results) {
+    const items = await c.env.DB.prepare(
+      `SELECT t.id, t.status, t.n_steps FROM pack_items pi JOIN traces t ON t.id = pi.trace_id
+       WHERE pi.pack_id = ?`
+    )
+      .bind(p.id)
+      .all();
+    packs.push({ ...p, tags: JSON.parse(p.tags ?? "[]"), traces: items.results });
+  }
+  return c.json({ packs });
+});
+
+app.post("/v1/packs", async (c) => {
+  const orgId = c.get("orgId");
+  const body = await c.req.json<{
+    title?: string;
+    tags?: string[];
+    price_cents?: number;
+    license?: string;
+    trace_ids?: string[];
+  }>();
+
+  const title = body.title?.trim() ?? "";
+  const traceIds = [...new Set(body.trace_ids ?? [])];
+  if (!title) return c.json({ error: "title required" }, 400);
+  if (!traceIds.length) return c.json({ error: "at least one trace required" }, 400);
+  if (!Number.isInteger(body.price_cents) || body.price_cents! < 0) {
+    return c.json({ error: "price_cents must be a non-negative integer" }, 400);
+  }
+
+  // Only this org's scrubbed traces can be packed (never sell uncleaned data).
+  const placeholders = traceIds.map(() => "?").join(",");
+  const { results } = await c.env.DB.prepare(
+    `SELECT id FROM traces WHERE id IN (${placeholders}) AND org_id = ? AND status = 'scrubbed'`
+  )
+    .bind(...traceIds, orgId)
+    .all<{ id: string }>();
+  const valid = new Set(results.map((r) => r.id));
+  const invalid = traceIds.filter((id) => !valid.has(id));
+  if (invalid.length) {
+    return c.json({ error: "traces must be yours and scrubbed", invalid }, 400);
+  }
+
+  const packId = "pack_" + crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO packs (id, org_id, title, tags, license, price_cents, status) VALUES (?, ?, ?, ?, ?, ?, 'draft')"
+    ).bind(
+      packId,
+      orgId,
+      title,
+      JSON.stringify(body.tags ?? []),
+      body.license ?? "standard",
+      body.price_cents
+    ),
+    ...traceIds.map((tid) =>
+      c.env.DB.prepare("INSERT INTO pack_items (pack_id, trace_id) VALUES (?, ?)").bind(packId, tid)
+    ),
+  ]);
+  return c.json({ pack_id: packId, status: "draft" }, 201);
+});
+
+async function ownedPack(c: { env: Env; req: { param(k: string): string } }, orgId: string) {
+  return c.env.DB.prepare("SELECT id, status FROM packs WHERE id = ? AND org_id = ?")
+    .bind(c.req.param("id"), orgId)
+    .first<{ id: string; status: string }>();
+}
+
+app.post("/v1/packs/:id/publish", async (c) => {
+  const orgId = c.get("orgId");
+  const pack = await ownedPack(c, orgId);
+  if (!pack) return c.json({ error: "not found" }, 404);
+  if (pack.status === "live") return c.json({ status: "live" });
+
+  // Publish gate: every item must still be scrubbed.
+  const bad = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM pack_items pi JOIN traces t ON t.id = pi.trace_id
+     WHERE pi.pack_id = ? AND t.status != 'scrubbed'`
+  )
+    .bind(pack.id)
+    .first<{ n: number }>();
+  if (!bad || bad.n > 0) return c.json({ error: "all items must be scrubbed to publish" }, 400);
+
+  await c.env.DB.prepare("UPDATE packs SET status = 'live' WHERE id = ?").bind(pack.id).run();
+  return c.json({ status: "live" });
+});
+
+app.post("/v1/packs/:id/delist", async (c) => {
+  const orgId = c.get("orgId");
+  const pack = await ownedPack(c, orgId);
+  if (!pack) return c.json({ error: "not found" }, 404);
+  await c.env.DB.prepare("UPDATE packs SET status = 'delisted' WHERE id = ?").bind(pack.id).run();
+  return c.json({ status: "delisted" });
 });
 
 // ---------------------------------------------------------------------------
@@ -296,10 +447,20 @@ async function scrubTraceById(env: Env, traceId: string): Promise<ScrubReport | 
     await env.TRACES.put(scrubbedKey, outcome.ndjson!, {
       httpMetadata: { contentType: "application/x-ndjson" },
     });
+
+    // Refresh scrubbed metadata into D1: task_desc was copied at ingest from
+    // the unredacted header, and listings must never leak pre-scrub text.
+    let redactedTask: string | null = null;
+    try {
+      const firstLine = outcome.ndjson!.slice(0, outcome.ndjson!.indexOf("\n"));
+      redactedTask = (JSON.parse(firstLine) as { task?: { description?: string } }).task?.description ?? null;
+    } catch {
+      redactedTask = null;
+    }
     await env.DB.prepare(
-      "UPDATE traces SET status = 'scrubbed', scrub_report = ?, blob_key = ? WHERE id = ?"
+      "UPDATE traces SET status = 'scrubbed', scrub_report = ?, blob_key = ?, task_desc = ? WHERE id = ?"
     )
-      .bind(JSON.stringify(outcome.report), scrubbedKey, traceId)
+      .bind(JSON.stringify(outcome.report), scrubbedKey, redactedTask, traceId)
       .run();
     return outcome.report;
   } catch (e) {
