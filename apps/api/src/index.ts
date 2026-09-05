@@ -131,7 +131,7 @@ app.use("/v1/*", async (c, next) => {
 
 const PACK_SELECT = `
   SELECT p.id, p.title, p.tags, p.license, p.price_cents, p.status, p.created_at,
-         o.name AS org_name, o.github_url AS org_github_url,
+         o.name AS org_name, o.github_url AS org_github_url, o.verified AS org_verified,
          (SELECT COUNT(*) FROM pack_items pi JOIN traces t ON t.id = pi.trace_id
            WHERE pi.pack_id = p.id) AS trace_count,
          (SELECT COALESCE(SUM(t.n_steps), 0) FROM pack_items pi JOIN traces t ON t.id = pi.trace_id

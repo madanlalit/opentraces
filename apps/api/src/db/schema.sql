@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS orgs (
   clerk_org_id     TEXT UNIQUE,
   name             TEXT NOT NULL,
   github_url       TEXT,                      -- seller attribution, shown to buyers
+  verified         INTEGER NOT NULL DEFAULT 0, -- 1 = GitHub identity confirmed by us
   stripe_connect_id TEXT,
   created_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );

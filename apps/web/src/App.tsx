@@ -1631,6 +1631,7 @@ type PackRow = {
   created_at: string;
   org_name: string;
   org_github_url?: string | null;
+  org_verified?: number | null;
   trace_count: number;
   step_count: number;
 };
@@ -1644,6 +1645,17 @@ type PackTrace = {
 };
 
 type MyPack = PackRow & { traces: { id: string; status: string; n_steps: number }[] };
+
+function VerifiedChip() {
+  return (
+    <span
+      title="We confirmed this seller's GitHub identity"
+      className="inline-flex items-center gap-1 border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"
+    >
+      \u2713 Verified
+    </span>
+  );
+}
 
 function money(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -1662,7 +1674,10 @@ function PackCard({ pack, onOpen }: { pack: PackRow; onOpen?: (id: string) => vo
         <h3 className="text-lg font-medium text-balance">{pack.title}</h3>
         <span className="shrink-0 text-lg font-semibold tabular-nums">{money(pack.price_cents)}</span>
       </div>
-      <div className="mt-1 text-xs text-muted-foreground">by {pack.org_name}</div>
+      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <span>by {pack.org_name}</span>
+        {!!pack.org_verified && <VerifiedChip />}
+      </div>
       {pack.tags.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {pack.tags.map((tag) => (
@@ -1794,7 +1809,7 @@ function PackDetailPage({ id }: { id: string }) {
                       {p.title}
                     </h1>
                     <div className="mt-1 text-sm text-muted-foreground">
-                      by {p.org_name}
+                      {!!p.org_verified && <VerifiedChip />}
                       {p.org_github_url && (
                         <>
                           {" \u00b7 "}
