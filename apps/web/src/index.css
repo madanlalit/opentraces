@@ -1,28 +1,66 @@
 @import "tailwindcss";
 
-/* Archivo (variable, 100–900) is the brand typeface — default for everything.
-   Instrument Serif italic is the editorial accent for single words. */
-@theme {
+/* ------------------------------------------------------------------ */
+/*  Design tokens — shadcn/ui convention, light-only neutral set       */
+/* ------------------------------------------------------------------ */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;       /* neutral-900 */
+  --primary: #171717;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f5;        /* neutral-100 */
+  --secondary-foreground: #171717;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373; /* neutral-500 */
+  --accent: #f5f5f5;
+  --accent-foreground: #171717;
+  --destructive: #dc2626;
+  --border: #e5e5e5;           /* neutral-200 */
+  --input: #d4d4d4;            /* neutral-300 */
+  --ring: #a3a3a3;             /* neutral-400 */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Archivo (variable, 100–900) is the brand typeface */
   --font-sans: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
+
+  /* radix accordion animations */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  @keyframes accordion-down {
+    from { height: 0; }
+    to { height: var(--radix-accordion-content-height); }
+  }
+  @keyframes accordion-up {
+    from { height: var(--radix-accordion-content-height); }
+    to { height: 0; }
+  }
 }
 
 html {
   scroll-behavior: smooth;
 }
 
-::selection {
-  background: #d1fae5; /* emerald-100 */
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* slow agents marquee (duplicate content = seamless loop) */
-@keyframes marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-.animate-marquee {
-  animation: marquee 32s linear infinite;
-}
-.marquee-paused:hover .animate-marquee {
-  animation-play-state: paused;
+::selection {
+  background: #d1fae5; /* emerald-100 */
 }

@@ -47,12 +47,14 @@ Status legend: ✅ implemented · 🟡 stub/TODO noted · 🔜 planned
 
 ---
 
-## 4. `apps/web` — React dashboard (skeleton)
+## 4. `apps/web` — React dashboard (shadcn/ui setup)
 
 | File | Purpose | Review notes |
 |---|---|---|
+| `src/components/ui/*` | **shadcn/ui** primitives pulled from the canonical `new-york-v4` registry: `button.tsx`, `badge.tsx`, `accordion.tsx`. Adapted: `@/lib/utils` alias, individual `@radix-ui/*` packages (registry now uses consolidated `radix-ui`). | Theme tokens live in `src/index.css` (`:root` vars + `@theme inline`). Add more primitives from the same registry URL pattern. |
+| `src/lib/utils.ts` | `cn()` (clsx + tailwind-merge) — shadcn class merge. | — |
 | `src/main.tsx` | `ClerkProvider` + root render; fails fast if `VITE_CLERK_PUBLISHABLE_KEY` missing. **v6 note:** `afterSignOutUrl` lives on `ClerkProvider`, not `UserButton`. | Package is **`@clerk/react`** (v6) — `@clerk/clerk-react` is a legacy Core 2 name (per clerk.com/SKILL.md). |
-| `src/App.tsx` | **Landing** (text-only wordmark nav w/ anchor links + Sign in, hero + terminal demo, agents strip, how-it-works ×3, lab guarantees, CTA band, footer) and placeholder vault (signed in). **v6 API:** conditional rendering via `<Show when="signed-in|signed-out">` — `SignedIn`/`SignedOut` were removed in v6. All copy sourced from PLAN.md §1–2. Nav is intentionally CTA-free (single CTA lives in hero/CTA band); no status badge on hero. | 🔜 Vault list wired to `GET /v1/traces` via Clerk JWT → API. Landing copy: "verification" described as part of the flow — matches Phase-2 plan; keep honest if messaging changes. |
+| `src/App.tsx` | **Landing** — minimal openwebui-style, built on shadcn primitives. Uniform system: shared `Section` wrapper (same container/padding/rhythm for every section), fixed type scale (h1 5xl/6xl semibold, h2 3xl semibold, h3 lg medium, body sm leading-6 muted). **Copy rules: customer-facing, zero em dashes.** Announcement Badge pill, hero w/ grid backdrop + terminal, interlude, Facts grid, How-it-works, For-labs, Radix Accordion FAQ, Works logos, CTA, footer w/ ghost wordmark. | 🔜 Vault list wired to `GET /v1/traces` via Clerk JWT → API. |
 | `vite.config.ts` | Vite + React + Tailwind v4 plugins. | — |
 | `index.html`, `src/index.css` | Shell, Tailwind import, **Archivo font** (Google Fonts variable 100–900, `@theme --font-sans` = brand typeface everywhere). | — |
 | `.env.example` | Clerk publishable key template. | — |
