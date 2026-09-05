@@ -17,7 +17,8 @@ import rich.progress
 import typer
 
 from . import __version__
-from .adapters import idempotency_key, parse_session, scan_sessions, to_ndjson
+from .adapters import SessionRef, idempotency_key, parse_session, scan_sessions, to_ndjson
+from .pi_integration import EXTENSION_TS, SKILL_MD
 from .config import CREDENTIALS_PATH, get_api_key, get_api_url, save_credentials
 
 app = typer.Typer(
@@ -70,6 +71,10 @@ def login(
             raise typer.Exit(1)
         save_credentials(key, url)
         rich.print(f"[green]✓ Logged in.[/green] Credentials saved to {CREDENTIALS_PATH}")
+        if rich.prompt.Confirm.ask(
+            "Install the pi integration? (/sell command + auto-push skill)", default=True
+        ):
+            _install_pi_integration()
         return
 
     # Device flow: approve in the browser, the key never touches the clipboard.
@@ -108,6 +113,10 @@ def login(
                     creds = poll.json()
                     save_credentials(creds["key"], url)
                     rich.print(f"[green]✓ Logged in as {creds['key_id']}.[/green] Saved to {CREDENTIALS_PATH}")
+                    if rich.prompt.Confirm.ask(
+                        "Install the pi integration? (/sell command + auto-push skill)", default=True
+                    ):
+                        _install_pi_integration()
                     return
                 if poll.status_code == 410:
                     rich.print("[red]This login request expired. Run ot login again.[/red]")
@@ -136,29 +145,53 @@ def push(
     agent: str = typer.Option("pi", "--agent", "-a", help="Agent to scan (pi; more coming)."),
     limit: int = typer.Option(10, "--limit", "-n", help="Max sessions to list."),
     all: bool = typer.Option(False, "--all", help="Upload every listed session without a picker."),
+    session: str = typer.Option(None, "--session", help="Upload one session file (path to .jsonl)."),
+    last: bool = typer.Option(False, "--last", help="Upload the most recent session."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts (for automation)."),
 ) -> None:
     """Scan local agent sessions and upload the ones you pick."""
-    sessions = scan_sessions(agent)[:limit]
-    if not sessions:
-        rich.print(f"No {agent} sessions found.")
-        raise typer.Exit(0)
-
-    table = rich.table.Table(title=f"{agent} sessions")
-    table.add_column("#", justify="right")
-    table.add_column("Session", style="cyan", max_width=60)
-    table.add_column("Entries", justify="right")
-    table.add_column("Path", style="dim", max_width=48)
-    for i, s in enumerate(sessions, 1):
-        table.add_row(str(i), s.name.replace("\n", " "), str(s.n_entries), str(s.path.parent.name))
-    rich.print(table)
-
-    if all:
-        chosen = list(range(len(sessions)))
+    if session or last:
+        if session:
+            p = Path(session).expanduser().resolve()
+            if not p.exists():
+                rich.print(f"[red]Session file not found: {p}[/red]")
+                raise typer.Exit(1)
+            n_entries = sum(1 for line in p.read_text(errors="replace").splitlines() if line.strip())
+            refs = [SessionRef(agent=agent, path=p, name=p.stem, n_entries=n_entries)]
+        else:
+            refs = scan_sessions(agent)[:1]
+            if not refs:
+                rich.print(f"No {agent} sessions found.")
+                raise typer.Exit(0)
+        rich.print(
+            f"Uploading [cyan]{refs[0].name[:70]}[/cyan] ({refs[0].n_entries} entries)"
+        )
+        if not yes:
+            if not rich.prompt.Confirm.ask("Upload this session?"):
+                raise typer.Exit(0)
+        sessions, chosen = refs, [0]
     else:
-        raw = rich.prompt.Prompt.ask("Upload which? (e.g. 1,3-5, 'a' for all, empty to cancel)").strip()
-        if not raw:
+        sessions = scan_sessions(agent)[:limit]
+        if not sessions:
+            rich.print(f"No {agent} sessions found.")
             raise typer.Exit(0)
-        chosen = _parse_selection(raw, len(sessions))
+
+        table = rich.table.Table(title=f"{agent} sessions")
+        table.add_column("#", justify="right")
+        table.add_column("Session", style="cyan", max_width=60)
+        table.add_column("Entries", justify="right")
+        table.add_column("Path", style="dim", max_width=48)
+        for i, s in enumerate(sessions, 1):
+            table.add_row(str(i), s.name.replace("\n", " "), str(s.n_entries), str(s.path.parent.name))
+        rich.print(table)
+
+        if all:
+            chosen = list(range(len(sessions)))
+        else:
+            raw = rich.prompt.Prompt.ask("Upload which? (e.g. 1,3-5, 'a' for all, empty to cancel)").strip()
+            if not raw:
+                raise typer.Exit(0)
+            chosen = _parse_selection(raw, len(sessions))
 
     uploaded = 0
     with _client() as client:
@@ -201,6 +234,25 @@ def push(
 
     rich.print(f"\n{uploaded} trace(s) uploaded. View them in your vault.")
     rich.print("[dim]Note: scrubbing runs server-side; secrets/PII are removed before listing.[/dim]")
+
+
+@app.command("install-skill")
+def install_skill() -> None:
+    """Install the pi extension + skill for selling traces from inside pi."""
+    _install_pi_integration()
+
+
+def _install_pi_integration() -> None:
+    ext_path = Path.home() / ".pi" / "agent" / "extensions" / "opentraces-seller.ts"
+    skill_path = Path.home() / ".pi" / "agent" / "skills" / "opentraces-seller" / "SKILL.md"
+    ext_path.parent.mkdir(parents=True, exist_ok=True)
+    skill_path.parent.mkdir(parents=True, exist_ok=True)
+    ext_path.write_text(EXTENSION_TS)
+    skill_path.write_text(SKILL_MD)
+    rich.print(f"[green]✓ pi extension installed:[/green] {ext_path}")
+    rich.print(f"[green]✓ pi skill installed:[/green] {skill_path}")
+    rich.print("Restart pi (or run /reload) to pick them up.")
+    rich.print("In pi: [bold]/sell[/bold] pushes this session. Set OT_AUTO_PUSH=1 to auto-push on quit.")
 
 
 def _parse_selection(raw: str, n: int) -> list[int]:
