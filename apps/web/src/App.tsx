@@ -302,6 +302,14 @@ function HowItWorks() {
           </div>
         ))}
       </div>
+      <div className="mt-12 text-center">
+        <Button variant="outline" asChild>
+          <Link to="/how">
+            See the full walkthrough
+            <ArrowRight className="transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        </Button>
+      </div>
     </Section>
   );
 }
