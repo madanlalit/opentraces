@@ -42,9 +42,9 @@ function SignInButtonMenu() {
 }
 
 function StartSellingButton() {
-  const { openSignIn } = useClerk();
+  const { openSignUp } = useClerk();
   return (
-    <Button size="lg" onClick={() => openSignIn()} className="group">
+    <Button size="lg" onClick={() => openSignUp()} className="group">
       Start selling
       <ArrowRight className="transition-transform group-hover:translate-x-0.5" />
     </Button>
