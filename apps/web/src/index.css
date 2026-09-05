@@ -5,6 +5,10 @@
   --font-sans: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   font-family: var(--font-sans);
   font-feature-settings: "ss01" on; /* alternate glyphs, cleaner numerals in tables */
