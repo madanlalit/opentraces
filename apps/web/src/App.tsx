@@ -23,6 +23,15 @@ function Wordmark() {
   return <span className="font-semibold tracking-tight">opentraces</span>;
 }
 
+/** Brand lockup: wordmark inside a sharp, transparent rectangle. */
+function Logo() {
+  return (
+    <span className="inline-flex items-center border border-neutral-900 px-3 py-1.5 text-sm font-semibold tracking-tight">
+      opentraces
+    </span>
+  );
+}
+
 function SignInButtonMenu() {
   const { openSignIn } = useClerk();
   return (
@@ -70,8 +79,8 @@ function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
-        <a href="#" className="flex items-center gap-2">
-          <Wordmark />
+        <a href="#" className="flex items-center gap-2" aria-label="opentraces home">
+          <Logo />
         </a>
         <nav className="flex items-center">
           <SignInButtonMenu />
@@ -91,8 +100,8 @@ function Hero() {
       <div className="relative mx-auto max-w-5xl px-6 pt-24 pb-24 text-center sm:pt-32">
         <Badge variant="outline" asChild>
           <a href="#how" className="group gap-2 pr-2 pl-3">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            pi ingestion is live
+            <img src="/agents/pi.svg" alt="pi" className="h-3.5 w-3.5" />
+            available now
             <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
           </a>
         </Badge>
@@ -318,9 +327,7 @@ function Works() {
       <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-3 text-sm">
         <Eyebrow>Agents</Eyebrow>
         <span className="flex items-center gap-2" title="pi, ingesting today">
-          <span className="flex h-5 w-5 items-center justify-center rounded bg-primary text-xs leading-none text-primary-foreground">
-            π
-          </span>
+          <img src="/agents/pi.svg" alt="pi" className="h-5 w-5" />
           <span className="font-medium">pi</span>
         </span>
         <span
