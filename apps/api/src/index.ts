@@ -131,7 +131,7 @@ app.use("/v1/*", async (c, next) => {
 
 const PACK_SELECT = `
   SELECT p.id, p.title, p.tags, p.license, p.price_cents, p.status, p.created_at,
-         o.name AS org_name,
+         o.name AS org_name, o.github_url AS org_github_url,
          (SELECT COUNT(*) FROM pack_items pi JOIN traces t ON t.id = pi.trace_id
            WHERE pi.pack_id = p.id) AS trace_count,
          (SELECT COALESCE(SUM(t.n_steps), 0) FROM pack_items pi JOIN traces t ON t.id = pi.trace_id
@@ -248,6 +248,14 @@ app.post("/v1/packs/:id/publish", async (c) => {
   if (!pack) return c.json({ error: "not found" }, 404);
   if (pack.status === "live") return c.json({ status: "live" });
 
+  // Publish gate: buyers must see who they are buying from.
+  const org = await c.env.DB.prepare("SELECT github_url FROM orgs WHERE id = ?")
+    .bind(orgId)
+    .first<{ github_url: string | null }>();
+  if (!org?.github_url) {
+    return c.json({ error: "set your seller GitHub profile before publishing" }, 400);
+  }
+
   // Publish gate: every item must still be scrubbed.
   const bad = await c.env.DB.prepare(
     `SELECT COUNT(*) AS n FROM pack_items pi JOIN traces t ON t.id = pi.trace_id
@@ -259,6 +267,27 @@ app.post("/v1/packs/:id/publish", async (c) => {
 
   await c.env.DB.prepare("UPDATE packs SET status = 'live' WHERE id = ?").bind(pack.id).run();
   return c.json({ status: "live" });
+});
+
+app.get("/v1/my/profile", async (c) => {
+  const orgId = c.get("orgId");
+  const org = await c.env.DB.prepare("SELECT name, github_url, created_at FROM orgs WHERE id = ?")
+    .bind(orgId)
+    .first();
+  return c.json({ profile: org });
+});
+
+app.patch("/v1/my/profile", async (c) => {
+  const orgId = c.get("orgId");
+  const body = await c.req.json<{ github_url?: string }>();
+  const url = body.github_url?.trim() ?? "";
+  if (url && !/^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/?$/.test(url)) {
+    return c.json({ error: "github_url must look like https://github.com/<username>" }, 400);
+  }
+  await c.env.DB.prepare("UPDATE orgs SET github_url = ? WHERE id = ?")
+    .bind(url || null, orgId)
+    .run();
+  return c.json({ ok: true });
 });
 
 app.post("/v1/packs/:id/delist", async (c) => {

@@ -797,6 +797,8 @@ function Dashboard() {
   const [packTags, setPackTags] = useState("");
   const [packBusy, setPackBusy] = useState(false);
   const [packMsg, setPackMsg] = useState<string | null>(null);
+  const [githubUrl, setGithubUrl] = useState("");
+  const [profileSaved, setProfileSaved] = useState(false);
   // Best available name: first name, then full name, username, email prefix.
   const first =
     user?.firstName ??
@@ -827,6 +829,13 @@ function Dashboard() {
         if (pres.ok && !cancelled) {
           const pdata = (await pres.json()) as { packs?: MyPack[] };
           setPacks(pdata.packs ?? []);
+        }
+        const prof = await fetch(`${API_URL}/v1/my/profile`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (prof.ok && !cancelled) {
+          const pd = (await prof.json()) as { profile?: { github_url?: string | null } };
+          setGithubUrl(pd.profile?.github_url ?? "");
         }
       } catch (e) {
         if (!cancelled) {
@@ -913,6 +922,27 @@ function Dashboard() {
       setPackMsg(e instanceof Error ? e.message : "something went wrong");
     } finally {
       setPackBusy(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    setProfileSaved(false);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("no session");
+      const res = await fetch(`${API_URL}/v1/my/profile`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ github_url: githubUrl }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `failed (${res.status})`);
+      }
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2000);
+    } catch (e) {
+      setPackMsg(e instanceof Error ? e.message : "could not save profile");
     }
   };
 
@@ -1039,6 +1069,30 @@ function Dashboard() {
                   Create pack
                 </Button>
               )}
+            </div>
+
+            <div className="mt-8 border border-border p-5">
+              <h3 className="text-sm font-medium">Seller profile</h3>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Shown on every pack you publish, so buyers can verify who they
+                are buying from. Required before publishing.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  value={githubUrl}
+                  onChange={(e) => setGithubUrl(e.target.value)}
+                  placeholder="https://github.com/yourname"
+                  className="w-72 border border-input bg-background px-3 py-2 font-mono text-sm outline-none focus:border-ring"
+                />
+                <Button variant="outline" size="sm" onClick={saveProfile}>
+                  Save
+                </Button>
+                {profileSaved && (
+                  <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+                    <Check className="h-3 w-3" /> Saved
+                  </span>
+                )}
+              </div>
             </div>
 
             {createOpen && (
@@ -1576,6 +1630,7 @@ type PackRow = {
   status: string;
   created_at: string;
   org_name: string;
+  org_github_url?: string | null;
   trace_count: number;
   step_count: number;
 };
@@ -1738,7 +1793,23 @@ function PackDetailPage({ id }: { id: string }) {
                     <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
                       {p.title}
                     </h1>
-                    <div className="mt-1 text-sm text-muted-foreground">by {p.org_name}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      by {p.org_name}
+                      {p.org_github_url && (
+                        <>
+                          {" \u00b7 "}
+                          <a
+                            href={p.org_github_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-foreground underline-offset-4 hover:underline"
+                            title="Verify the seller on GitHub"
+                          >
+                            GitHub profile ↗
+                          </a>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <span className="text-2xl font-semibold tabular-nums">{money(p.price_cents)}</span>
                 </div>

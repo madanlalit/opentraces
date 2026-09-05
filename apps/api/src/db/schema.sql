@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS orgs (
   id               TEXT PRIMARY KEY,          -- "org_" || hex
   clerk_org_id     TEXT UNIQUE,
   name             TEXT NOT NULL,
+  github_url       TEXT,                      -- seller attribution, shown to buyers
   stripe_connect_id TEXT,
   created_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
