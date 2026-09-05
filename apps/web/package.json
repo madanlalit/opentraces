@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clerk/clerk-react": "^5.0.0",
+    "@clerk/react": "^6.15.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

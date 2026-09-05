@@ -1,4 +1,4 @@
-import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
+import { Show, SignInButton, UserButton } from "@clerk/react";
 
 function Landing() {
   return (
@@ -8,11 +8,14 @@ function Landing() {
         Turn your coding agent's traces into training data. Sell what your agent
         already produced — pi first, more agents soon.
       </p>
-      <SignInButton mode="modal">
-        <button className="rounded-lg bg-white px-5 py-2.5 font-medium text-neutral-900 hover:bg-neutral-200">
-          Start selling
-        </button>
-      </SignInButton>
+      {/* v6: conditional rendering uses <Show>; the button opens the Clerk modal */}
+      <Show when="signed-out">
+        <SignInButton mode="modal">
+          <button className="rounded-lg bg-white px-5 py-2.5 font-medium text-neutral-900 hover:bg-neutral-200">
+            Start selling
+          </button>
+        </SignInButton>
+      </Show>
     </div>
   );
 }
@@ -25,7 +28,8 @@ function Dashboard() {
           <h1 className="text-xl font-semibold">OpenTraces</h1>
           <p className="text-sm text-neutral-500">Seller vault</p>
         </div>
-        <UserButton afterSignOutUrl="/" />
+        {/* v6: sign-out redirect is configured on <ClerkProvider afterSignOutUrl> */}
+        <UserButton />
       </header>
 
       <section className="mt-10 rounded-xl border border-neutral-800 bg-neutral-900/50 p-6">
@@ -47,12 +51,12 @@ function Dashboard() {
 export default function App() {
   return (
     <>
-      <SignedOut>
+      <Show when="signed-out">
         <Landing />
-      </SignedOut>
-      <SignedIn>
+      </Show>
+      <Show when="signed-in">
         <Dashboard />
-      </SignedIn>
+      </Show>
     </>
   );
 }

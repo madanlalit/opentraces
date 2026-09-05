@@ -51,13 +51,15 @@ Status legend: ✅ implemented · 🟡 stub/TODO noted · 🔜 planned
 
 | File | Purpose | Review notes |
 |---|---|---|
-| `src/main.tsx` | `ClerkProvider` + root render; fails fast if `VITE_CLERK_PUBLISHABLE_KEY` missing. | — |
-| `src/App.tsx` | Landing (signed out, `SignInButton` modal) + placeholder vault (signed in) with `ot push` instructions. | 🔜 Vault list wired to `GET /v1/traces` via Clerk JWT → API. |
+| `src/main.tsx` | `ClerkProvider` + root render; fails fast if `VITE_CLERK_PUBLISHABLE_KEY` missing. **v6 note:** `afterSignOutUrl` lives on `ClerkProvider`, not `UserButton`. | Package is **`@clerk/react`** (v6) — `@clerk/clerk-react` is a legacy Core 2 name (per clerk.com/SKILL.md). |
+| `src/App.tsx` | Landing (signed out, `SignInButton mode="modal"`) + placeholder vault (signed in). **v6 API:** conditional rendering via `<Show when="signed-in|signed-out">` — `SignedIn`/`SignedOut` were removed in v6. | 🔜 Vault list wired to `GET /v1/traces` via Clerk JWT → API. |
 | `vite.config.ts` | Vite + React + Tailwind v4 plugins. | — |
 | `index.html`, `src/index.css` | Shell + Tailwind import. | — |
 | `.env.example` | Clerk publishable key template. | — |
 
 **Not implemented yet:** Clerk JWT → API auth path, vault table UI, pack builder, public index page.
+
+**Clerk setup state:** linked to Clerk app `opentraces` (`app_3ItnpTq4s4IPPWYZhEBhpapNfLZ`) via `clerk link`; publishable key in `apps/web/.env` (value never read/printed); verified with `clerk doctor`. `clerk init` was run but only installs optional agent skills — the framework wiring here is manual per the React quickstart. First test user: sign up on the landing page.
 
 ---
 
