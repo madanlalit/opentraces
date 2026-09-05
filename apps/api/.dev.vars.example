@@ -1,2 +1,4 @@
-# Local dev secrets (never commit .dev.vars)
+# Local secrets for `wrangler dev` — copy to .dev.vars and fill in.
+# CLERK_SECRET_KEY: dashboard.clerk.com → API Keys (server-side only, never in the web app)
+CLERK_ISSUER=https://<your-instance>.clerk.accounts.dev
 CLERK_SECRET_KEY=sk_test_replace_me

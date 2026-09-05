@@ -10,7 +10,7 @@
     {
       "binding": "DB",
       "database_name": "opentraces",
-      "database_id": "REPLACE_WITH_D1_ID"
+      "database_id": "1dce496b-f006-4616-99f3-29d499575839"
     }
   ],
 
@@ -19,7 +19,11 @@
       "binding": "TRACES",
       "bucket_name": "opentraces-traces"
     }
-  ]
+  ],
+
+  "vars": {
+    "CLERK_ISSUER": "https://factual-antelope-41.clerk.accounts.dev"
+  }
 
   // Phase 1.5: queue producer for async scrub pipeline
   // "queues": { "producers": [{ "binding": "SCRUB", "queue": "trace-scrub" }] }

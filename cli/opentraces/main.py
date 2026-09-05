@@ -7,10 +7,13 @@ Server-side scrubbing runs after upload; traces land in the seller's vault.
 from __future__ import annotations
 
 import getpass
+import time
+import webbrowser
 from pathlib import Path
 
 import httpx
 import rich
+import rich.progress
 import typer
 
 from . import __version__
@@ -47,24 +50,72 @@ def version() -> None:
 
 
 @app.command()
-def login() -> None:
-    """Store your API key (create one in the dashboard → Settings → API Keys)."""
-    rich.print("Create a key at [bold]Dashboard → Settings → API Keys[/bold], then paste it.")
-    key = _require_key_prefix(getpass.getpass("API key: ").strip())
-    url = get_api_url()
+def login(
+    key: str = typer.Option(None, "--key", help="Paste an API key directly (CI/service use). Default: device flow in your browser."),
+    api_url: str = typer.Option(None, "--api-url", help="Override the API base URL for this login."),
+) -> None:
+    """Log in. Default: approve in your browser with your OpenTraces account."""
+    url = api_url or get_api_url()
 
-    with httpx.Client(base_url=url, headers={"Authorization": f"Bearer {key}"}, timeout=30) as client:
+    if key:  # direct paste flow (CI / service accounts)
+        key = _require_key_prefix(key.strip() or getpass.getpass("API key: "))
+        with httpx.Client(base_url=url, headers={"Authorization": f"Bearer {key}"}, timeout=30) as client:
+            try:
+                resp = client.get("/v1/traces")
+            except httpx.HTTPError as e:
+                rich.print(f"[red]Could not reach {url}: {e}[/red]")
+                raise typer.Exit(1)
+        if resp.status_code != 200:
+            rich.print(f"[red]Key rejected ({resp.status_code}): {resp.text}[/red]")
+            raise typer.Exit(1)
+        save_credentials(key, url)
+        rich.print(f"[green]✓ Logged in.[/green] Credentials saved to {CREDENTIALS_PATH}")
+        return
+
+    # Device flow: approve in the browser, the key never touches the clipboard.
+    with httpx.Client(base_url=url, timeout=30) as client:
         try:
-            resp = client.get("/v1/traces")
+            resp = client.post("/v1/device/code")
         except httpx.HTTPError as e:
             rich.print(f"[red]Could not reach {url}: {e}[/red]")
             raise typer.Exit(1)
-    if resp.status_code != 200:
-        rich.print(f"[red]Key rejected ({resp.status_code}): {resp.text}[/red]")
-        raise typer.Exit(1)
+        if resp.status_code != 201:
+            rich.print(f"[red]Could not start login ({resp.status_code}): {resp.text}[/red]")
+            raise typer.Exit(1)
+        d = resp.json()
+        device_code, user_code = d["device_code"], d["user_code"]
+        interval, deadline = d.get("interval", 2), time.time() + d.get("expires_in", 600)
+        verify_url = f"{d['verify_url']}?user_code={user_code}"
 
-    save_credentials(key, url)
-    rich.print(f"[green]✓ Logged in.[/green] Credentials saved to {CREDENTIALS_PATH}")
+        rich.print(f"Open [bold]{verify_url}[/bold] and approve the login for [bold]{user_code}[/bold]")
+        try:
+            webbrowser.open(verify_url)
+        except Exception:
+            pass
+
+        with rich.progress.Progress(
+            rich.progress.SpinnerColumn(), rich.progress.TextColumn("Waiting for approval…")
+        ) as progress:
+            progress.add_task("login", total=None)
+            while time.time() < deadline:
+                time.sleep(interval)
+                try:
+                    poll = client.post("/v1/device/poll", json={"device_code": device_code})
+                except httpx.HTTPError as e:
+                    rich.print(f"[red]Connection lost: {e}[/red]")
+                    raise typer.Exit(1)
+                if poll.status_code == 200:
+                    creds = poll.json()
+                    save_credentials(creds["key"], url)
+                    rich.print(f"[green]✓ Logged in as {creds['key_id']}.[/green] Saved to {CREDENTIALS_PATH}")
+                    return
+                if poll.status_code == 410:
+                    rich.print("[red]This login request expired. Run ot login again.[/red]")
+                    raise typer.Exit(1)
+                # 202 pending: keep polling
+
+        rich.print("[red]Timed out waiting for approval.[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -115,15 +166,29 @@ def push(
             ref = sessions[idx]
             trace = parse_session(ref.agent, ref.path)
             payload = to_ndjson(trace)
-            resp = client.post(
-                "/v1/traces",
-                content=payload.encode("utf-8"),
-                headers={
-                    "Content-Type": "application/x-ndjson",
-                    "Idempotency-Key": idempotency_key(ref.agent, ref.path),
-                },
-            )
             label = ref.name.replace("\n", " ")[:48]
+            # Idempotent server-side (content-hash dedup), so retrying a timeout
+            # can never create a duplicate trace.
+            resp = None
+            for attempt in range(3):
+                try:
+                    resp = client.post(
+                        "/v1/traces",
+                        content=payload.encode("utf-8"),
+                        headers={
+                            "Content-Type": "application/x-ndjson",
+                            "Idempotency-Key": idempotency_key(ref.agent, ref.path),
+                        },
+                    )
+                    break
+                except httpx.HTTPError as e:
+                    if attempt == 2:
+                        rich.print(f"[red]✗ {label} → upload failed after 3 tries: {e}[/red]")
+                        continue
+                    rich.print(f"[yellow]… {label} → retry {attempt + 1}/2 ({type(e).__name__})[/yellow]")
+                    time.sleep(2)
+            if resp is None:
+                continue
             if resp.status_code in (200, 202):
                 data = resp.json()
                 dup = " (duplicate)" if data.get("duplicate") else ""

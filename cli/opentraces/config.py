@@ -10,7 +10,8 @@ import os
 from pathlib import Path
 
 CREDENTIALS_PATH = Path.home() / ".opentraces" / "credentials"
-DEFAULT_API_URL = "http://localhost:8787"
+# Production API. Local dev overrides with OT_API_URL (or `ot login` against localhost).
+DEFAULT_API_URL = "https://opentraces-api.lalitmadan.workers.dev"
 
 
 def _read_credentials() -> dict:

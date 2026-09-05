@@ -1,26 +1,55 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { parseTraceNDJSON, TraceParseError } from "@opentraces/schema";
+import { clerkAuth } from "./auth";
+
+// Dashboard origins allowed to call this API from a browser.
+// Local dev (Vite) + the production Pages deployment.
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "https://opentraces.pages.dev",
+  "https://opentraces-web.pages.dev",
+];
 
 type Env = {
   DB: D1Database;
   TRACES: R2Bucket;
+  CLERK_ISSUER: string;
 };
 
 type Variables = { orgId: string };
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// CORS for dashboard origins — must run before auth so OPTIONS preflights pass.
+app.use("/v1/*", cors({ origin: ALLOWED_ORIGINS, allowHeaders: ["Authorization", "Content-Type"], allowMethods: ["GET", "POST", "OPTIONS"] }));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function newId(prefix: string): string {
+  return prefix + crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+}
+
+// Human-friendly device code: no 0/O/1/I, 4+4 with a dash.
+function newUserCode(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const pick = () =>
+    [...crypto.getRandomValues(new Uint8Array(4))]
+      .map((b) => alphabet[b % alphabet.length])
+      .join("");
+  return `${pick()}-${pick()}`;
+}
 
 async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function newId(prefix: string): string {
-  return prefix + crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+function newSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -37,9 +66,24 @@ app.get("/v1/health", (c) => c.json({ ok: true, service: "opentraces-api" }));
 
 app.use("/v1/*", async (c, next) => {
   if (c.req.path === "/v1/health") return next();
+  // device code + poll are public by design (that's the whole point of the flow);
+  // approve does its own Clerk JWT check inside the handler.
+  if (c.req.path.startsWith("/v1/device/")) return next();
 
   const auth = c.req.header("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+
+  // Clerk session JWT (dashboard) — verified against the instance JWKS.
+  if (token.split(".").length === 3 && token.startsWith("ey")) {
+    try {
+      const { orgId } = await clerkAuth(c.env, auth);
+      c.set("orgId", orgId);
+      return next();
+    } catch {
+      return c.json({ error: "invalid session" }, 401);
+    }
+  }
+
   const parts = token.split("_");
 
   if (parts.length >= 4) {
@@ -69,8 +113,96 @@ app.use("/v1/*", async (c, next) => {
     }
   }
 
-  // TODO(next slice): Clerk session JWT verification via JWKS for dashboard calls.
+  // TODO: rate limiting per key.
   return c.json({ error: "unsupported authorization scheme" }, 401);
+});
+
+// ---------------------------------------------------------------------------
+// Device flow — `ot login` without copy-pasting keys.
+// CLI: POST /v1/device/code → opens {verify_url}?user_code=… in the browser.
+// Dashboard (/cli/auth, Clerk session): POST /v1/device/approve.
+// CLI polls POST /v1/device/poll until the key is handed over (single read).
+// ---------------------------------------------------------------------------
+
+app.post("/v1/device/code", async (c) => {
+  // opportunistic cleanup of expired rows
+  await c.env.DB.prepare("DELETE FROM device_auths WHERE expires_at < datetime('now')").run();
+
+  const deviceCode = newSecret(); // 32 bytes, url-safe, also unguessable
+  const userCode = newUserCode();
+  await c.env.DB.prepare(
+    "INSERT INTO device_auths (device_code, user_code, status, expires_at) VALUES (?, ?, 'pending', datetime('now', '+10 minutes'))"
+  )
+    .bind(deviceCode, userCode)
+    .run();
+
+  return c.json({
+    device_code: deviceCode,
+    user_code: userCode,
+    verify_url: "https://opentraces.pages.dev/cli/auth",
+    expires_in: 600,
+    interval: 2,
+  }, 201);
+});
+
+app.post("/v1/device/approve", async (c) => {
+  let orgId: string;
+  try {
+    ({ orgId } = await clerkAuth(c.env, c.req.header("Authorization")));
+  } catch {
+    return c.json({ error: "invalid session" }, 401);
+  }
+
+  const { user_code } = (await c.req.json<{ user_code?: string }>()) ?? {};
+  if (!user_code) return c.json({ error: "user_code required" }, 400);
+
+  const row = await c.env.DB.prepare(
+    "SELECT device_code, status FROM device_auths WHERE user_code = ? AND status = 'pending' AND expires_at > datetime('now')"
+  )
+    .bind(user_code.trim().toUpperCase())
+    .first<{ device_code: string }>();
+  if (!row) return c.json({ error: "unknown or expired code" }, 404);
+
+  const keyId = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+  const secret = newSecret();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO api_keys (id, org_id, key_id, secret_hash, name) VALUES (?, ?, ?, ?, 'device login')"
+    ).bind("ak_" + keyId, orgId, keyId, await sha256Hex(secret)),
+    c.env.DB.prepare(
+      "UPDATE device_auths SET status = 'approved', org_id = ?, key_id = ?, secret = ? WHERE device_code = ?"
+    ).bind(orgId, keyId, secret, row.device_code),
+  ]);
+
+  // The full secret is deliberately NOT shown in the browser. It is handed
+  // to the CLI exactly once via /v1/device/poll.
+  return c.json({ approved: true, key_id: keyId });
+});
+
+app.post("/v1/device/poll", async (c) => {
+  const { device_code } = (await c.req.json<{ device_code?: string }>()) ?? {};
+  if (!device_code) return c.json({ error: "device_code required" }, 400);
+
+  const row = await c.env.DB.prepare(
+    "SELECT status, key_id, secret, expires_at FROM device_auths WHERE device_code = ?"
+  )
+    .bind(device_code)
+    .first<{ status: string; key_id: string | null; secret: string | null; expires_at: string }>();
+
+  if (!row || row.expires_at < new Date().toISOString().replace("T", " ").slice(0, 19)) {
+    await c.env.DB.prepare("DELETE FROM device_auths WHERE device_code = ?").bind(device_code).run();
+    return c.json({ error: "expired" }, 410);
+  }
+  if (row.status !== "approved" || !row.secret || !row.key_id) {
+    return c.json({ status: "pending" }, 202);
+  }
+
+  // Single read: hand the secret over and burn the stash.
+  await c.env.DB.prepare(
+    "UPDATE device_auths SET secret = NULL WHERE device_code = ?"
+  ).bind(device_code).run();
+
+  return c.json({ key: `ot_live_${row.key_id}_${row.secret}`, key_id: row.key_id });
 });
 
 // ---------------------------------------------------------------------------
@@ -153,9 +285,22 @@ app.get("/v1/traces/:id", async (c) => {
     .first();
   if (!trace) return c.json({ error: "not found" }, 404);
 
+  // Parse the stored NDJSON into header + steps for the trace viewer.
   const obj = await c.env.TRACES.get(trace.blob_key as string);
-  const steps = obj ? (await obj.text()).split("\n").filter(Boolean).length - 1 : 0;
-  return c.json({ trace, header_and_steps_lines: steps + 1 });
+  let header: unknown = null;
+  let steps: unknown[] = [];
+  let parse_error: string | null = null;
+  if (obj) {
+    try {
+      const parsed = parseTraceNDJSON(await obj.text());
+      header = parsed.header;
+      steps = parsed.steps;
+    } catch (e) {
+      parse_error = e instanceof TraceParseError ? e.message : "unreadable blob";
+    }
+  }
+
+  return c.json({ trace, header, steps, parse_error });
 });
 
 export default app;

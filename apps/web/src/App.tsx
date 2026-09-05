@@ -1,4 +1,5 @@
-import { Show, useClerk, UserButton } from "@clerk/react";
+import { useEffect, useRef, useState } from "react";
+import { Show, SignUp, useAuth, useClerk, UserButton, useUser } from "@clerk/react";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,57 @@ import { cn } from "@/lib/utils";
 /*    h1 text-5xl/6xl font-semibold · h2 text-3xl font-semibold ·      */
 /*    h3 text-lg font-medium · body text-sm leading-6 muted            */
 /*  Copy rule: customer-facing, no em dashes.                          */
+/*  Routes: / landing · /sign-up Clerk sign-up page · /dashboard vault */
+/* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/*  Tiny router (pathname state, no dependency)                        */
+/* ------------------------------------------------------------------ */
+
+function usePath() {
+  const [path, setPath] = useState(window.location.pathname);
+  useEffect(() => {
+    const on = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", on);
+    return () => window.removeEventListener("popstate", on);
+  }, []);
+  return path;
+}
+
+function navigate(to: string) {
+  history.pushState(null, "", to);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function Link({
+  to,
+  children,
+  ...rest
+}: React.ComponentProps<"a"> & { to: string }) {
+  return (
+    <a
+      href={to}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        navigate(to);
+      }}
+      {...rest}
+    >
+      {children}
+    </a>
+  );
+}
+
+function Navigate({ to }: { to: string }) {
+  useEffect(() => {
+    navigate(to);
+  }, [to]);
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Shared brand + layout                                              */
 /* ------------------------------------------------------------------ */
 
 function Wordmark() {
@@ -41,12 +93,15 @@ function SignInButtonMenu() {
   );
 }
 
-function StartSellingButton() {
-  const { openSignUp } = useClerk();
+/** Primary CTA, auth-aware: new visitors go to sign-up, sellers go to their vault. */
+function PrimaryCta() {
+  const { isSignedIn } = useAuth();
   return (
-    <Button size="lg" onClick={() => openSignUp()} className="group">
-      Start selling
-      <ArrowRight className="transition-transform group-hover:translate-x-0.5" />
+    <Button size="lg" asChild className="group">
+      <Link to={isSignedIn ? "/dashboard" : "/sign-up"}>
+        {isSignedIn ? "Go to dashboard" : "Start selling"}
+        <ArrowRight className="transition-transform group-hover:translate-x-0.5" />
+      </Link>
     </Button>
   );
 }
@@ -75,15 +130,26 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Landing                                                            */
+/* ------------------------------------------------------------------ */
+
 function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
-        <a href="#" className="flex items-center gap-2" aria-label="opentraces home">
+        <Link to="/" className="flex items-center gap-2" aria-label="opentraces home">
           <Logo />
-        </a>
+        </Link>
         <nav className="flex items-center">
-          <SignInButtonMenu />
+          <Show when="signed-in">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/dashboard">Dashboard</Link>
+            </Button>
+          </Show>
+          <Show when="signed-out">
+            <SignInButtonMenu />
+          </Show>
         </nav>
       </div>
     </header>
@@ -116,7 +182,7 @@ function Hero() {
         </p>
 
         <div className="mt-8 flex items-center justify-center gap-3">
-          <StartSellingButton />
+          <PrimaryCta />
           <Button variant="outline" size="lg" asChild>
             <a href="#how">How it works</a>
           </Button>
@@ -375,7 +441,7 @@ function CtaBand() {
         If you run a coding agent, you are already producing inventory.
       </h2>
       <div className="mt-8 flex justify-center">
-        <StartSellingButton />
+        <PrimaryCta />
       </div>
     </Section>
   );
@@ -436,46 +502,758 @@ function Landing() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Dashboard (placeholder until the vault slice)                      */
+/*  Sign-up page (dedicated Clerk route)                               */
 /* ------------------------------------------------------------------ */
 
-function Dashboard() {
+function SignUpPage() {
   return (
-    <div className="min-h-screen bg-background p-10">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">OpenTraces</h1>
-          <p className="text-sm text-muted-foreground">Seller vault</p>
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <header className="border-b border-border">
+        <div className="mx-auto flex h-14 max-w-5xl items-center px-6">
+          <Link to="/" aria-label="opentraces home">
+            <Logo />
+          </Link>
         </div>
-        {/* v6: sign-out redirect is configured on ClerkProvider afterSignOutUrl */}
-        <UserButton />
       </header>
-
-      <section className="mt-10 rounded-xl border border-border bg-secondary p-6">
-        <h2 className="font-medium">Vault</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          No traces yet. From your machine run:
-        </p>
-        <pre className="mt-3 rounded-lg bg-neutral-950 p-4 font-mono text-sm text-neutral-300">
-          <code>pipx install opentraces{"\n"}ot login{"\n"}ot push</code>
-        </pre>
-        <p className="mt-3 text-xs text-neutral-400">
-          Traces uploaded here appear in your vault after scrubbing.
-        </p>
-      </section>
+      <main className="flex flex-1 items-center justify-center px-6 py-24">
+        <div className="w-full max-w-md">
+          <div className="mb-8 text-center">
+            <h1 className="text-3xl font-semibold tracking-tight">
+              Create your seller account
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Push your first trace in minutes, keep 80% of every sale.
+            </p>
+          </div>
+          <SignUp
+            path="/sign-up"
+            routing="path"
+            fallbackRedirectUrl="/dashboard"
+          />
+        </div>
+      </main>
+      <footer className="border-t border-border">
+        <div className="mx-auto max-w-5xl px-6 py-6 text-center text-sm text-muted-foreground">
+          Already selling?{" "}
+          <SignInLink className="text-foreground underline-offset-4 hover:underline" />
+        </div>
+      </footer>
     </div>
   );
 }
 
-export default function App() {
+function SignInLink({ className }: { className?: string }) {
+  const { openSignIn } = useClerk();
   return (
-    <>
-      <Show when="signed-out">
-        <Landing />
-      </Show>
-      <Show when="signed-in">
-        <Dashboard />
-      </Show>
-    </>
+    <button type="button" className={cn(className)} onClick={() => openSignIn()}>
+      Sign in
+    </button>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Dashboard: same theme as the landing, app density                 */
+/* ------------------------------------------------------------------ */
+
+function DashboardNav() {
+  return (
+    <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
+        <Link to="/" aria-label="opentraces home">
+          <Logo />
+        </Link>
+        <nav className="flex items-center">
+          <UserButton />
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+function StatTile({ big, small }: { big: string; small: string }) {
+  return (
+    <div className="bg-background px-6 py-10">
+      <div className="text-4xl font-semibold tracking-tight">{big}</div>
+      <div className="mt-2 text-sm text-muted-foreground">{small}</div>
+    </div>
+  );
+}
+
+function Terminal({ lines }: { lines: string[] }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-neutral-900/15">
+      <pre className="overflow-x-auto p-6 text-left font-mono text-[13px] leading-6 text-neutral-300">
+        <code>
+          {lines.map((line, i) => (
+            <span key={i}>
+              <span className="text-neutral-500">$</span> {line}
+              {"\n"}
+            </span>
+          ))}
+        </code>
+      </pre>
+    </div>
+  );
+}
+
+type TraceRow = {
+  id: string;
+  agent: string;
+  model: string | null;
+  repo_url: string | null;
+  base_commit?: string | null;
+  task_desc: string | null;
+  n_steps: number;
+  cost_usd: number | null;
+  status: string;
+  created_at: string;
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; variant: "default" | "outline" | "secondary" | "destructive" }> = {
+    uploaded: { label: "Received", variant: "outline" },
+    scrubbing: { label: "Cleaning", variant: "secondary" },
+    scrubbed: { label: "Ready", variant: "default" },
+    rejected: { label: "Rejected", variant: "destructive" },
+  };
+  const v = map[status] ?? { label: status.charAt(0).toUpperCase() + status.slice(1), variant: "outline" as const };
+  return <Badge variant={v.variant}>{v.label}</Badge>;
+}
+
+function VaultTable({ traces, onOpen }: { traces: TraceRow[]; onOpen: (id: string) => void }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b border-border text-left text-xs font-medium text-muted-foreground">
+          <th className="py-3 pr-4 font-medium">Session</th>
+          <th className="py-3 pr-4 font-medium">Agent</th>
+          <th className="py-3 pr-4 font-medium">Model</th>
+          <th className="py-3 pr-4 text-right font-medium">Steps</th>
+          <th className="py-3 pr-4 font-medium">Status</th>
+          <th className="py-3 text-right font-medium">Uploaded</th>
+        </tr>
+      </thead>
+      <tbody>
+        {traces.map((t) => (
+          <tr
+            key={t.id}
+            onClick={() => onOpen(t.id)}
+            className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-accent/50"
+          >
+            <td className="max-w-56 py-3 pr-4 truncate font-medium" title={t.task_desc ?? t.repo_url ?? t.id}>
+              {t.task_desc ?? t.repo_url ?? t.id}
+            </td>
+            <td className="py-3 pr-4">{t.agent}</td>
+            <td className="py-3 pr-4 text-muted-foreground">{t.model ?? "–"}</td>
+            <td className="py-3 pr-4 text-right tabular-nums">{t.n_steps}</td>
+            <td className="py-3 pr-4">
+              <StatusBadge status={t.status} />
+            </td>
+            <td className="py-3 text-right text-muted-foreground tabular-nums">{t.created_at.slice(0, 10)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function GetStartedPanel() {
+  return (
+    <div className="mx-auto max-w-5xl px-6 py-16">
+      <div className="grid items-start gap-12 md:grid-cols-2">
+        <div>
+          <Eyebrow>Get started</Eyebrow>
+          <h2 className="mt-4 text-3xl font-semibold tracking-tight">
+            Push your first trace.
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Install the CLI with uv, sign in once, and pick the sessions
+            you want to sell. The consent picker shows exactly what will
+            be uploaded, and nothing leaves your machine without your
+            approval.
+          </p>
+          <ul className="mt-6 space-y-3 text-sm leading-6 text-muted-foreground">
+            <li className="flex gap-3">
+              <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-neutral-900" />
+              Secrets and personal data are scrubbed on arrival.
+            </li>
+            <li className="flex gap-3">
+              <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-neutral-900" />
+              Each trace is pinned to a repository and commit.
+            </li>
+            <li className="flex gap-3">
+              <span className="mt-2.5 h-1 w-1 shrink-0 rounded-full bg-neutral-900" />
+              You choose the license and can delist at any time.
+            </li>
+          </ul>
+        </div>
+        <Terminal lines={["uv tool install opentraces", "ot login", "ot push"]} />
+      </div>
+      <p className="mt-8 text-sm text-muted-foreground">
+        Prefer to look around first?{" "}
+        <Link
+          to="/"
+          className="text-foreground underline-offset-4 hover:underline"
+        >
+          Back to the homepage
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+function Dashboard() {
+  const { user } = useUser();
+  const { isSignedIn, getToken } = useAuth();
+  const [traces, setTraces] = useState<TraceRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  // Best available name: first name, then full name, username, email prefix.
+  const first =
+    user?.firstName ??
+    user?.fullName?.split(" ")[0] ??
+    user?.username ??
+    user?.primaryEmailAddress?.emailAddress.split("@")[0].replace(/^./, (c) => c.toUpperCase()) ??
+    "there";
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("no session");
+        const res = await fetch(`${API_URL}/v1/traces`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(`vault request failed (${res.status})`);
+        const data = (await res.json()) as { traces?: TraceRow[] };
+        if (!cancelled) {
+          setTraces(data.traces ?? []);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "failed to load your vault");
+          setTraces(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn, getToken, refreshKey]);
+
+  const steps = traces?.reduce((n, t) => n + t.n_steps, 0) ?? 0;
+  const spend = traces?.reduce((n, t) => n + (t.cost_usd ?? 0), 0) ?? 0;
+  const ready = traces?.filter((t) => t.status === "scrubbed").length ?? 0;
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <DashboardNav />
+
+      <main>
+        {/* header */}
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 pt-16 pb-16">
+            <h1 className="text-4xl font-semibold tracking-tight">
+              Welcome back, {first}.
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+              This is your vault. Traces you push from the terminal land here
+              after scrubbing, then get grouped into packs for labs to buy.
+            </p>
+          </div>
+        </div>
+
+        {/* stats, Facts-style tiles */}
+        <div className="border-b border-border">
+          <div className="mx-auto grid max-w-5xl grid-cols-2 gap-px bg-border lg:grid-cols-4">
+            <StatTile big={String(traces?.length ?? 0)} small="traces in your vault" />
+            <StatTile big={steps.toLocaleString()} small="steps captured" />
+            <StatTile big={String(ready)} small="scrubbed and ready" />
+            <StatTile big={`$${spend.toFixed(2)}`} small="token spend" />
+          </div>
+        </div>
+
+        {/* vault: error / loading / empty / table */}
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 py-16">
+            {error ? (
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground">
+                  Could not load your vault: {error}
+                </p>
+                <div className="mt-4">
+                  <Button variant="outline" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
+                    Retry
+                  </Button>
+                </div>
+              </div>
+            ) : traces === null ? (
+              <p className="text-center text-sm text-muted-foreground">Loading your traces…</p>
+            ) : traces.length === 0 ? (
+              <GetStartedPanel />
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <Eyebrow>Your traces</Eyebrow>
+                  <Button variant="ghost" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
+                    Refresh
+                  </Button>
+                </div>
+                <div className="mt-4 border-t">
+                  <VaultTable traces={traces} onOpen={(id) => navigate(`/dashboard/traces/${id}`)} />
+                </div>
+                <p className="mt-6 text-sm text-muted-foreground">
+                  Push more sessions with <span className="font-mono">ot push</span>. New
+                  traces appear here after scrubbing.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <div className="mx-auto max-w-5xl px-6 py-8 text-sm text-muted-foreground">
+          <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+            <div className="flex items-center gap-2">
+              <Wordmark />
+              <span>© 2026</span>
+              <span>·</span>
+              <span>selling starts with a full vault</span>
+            </div>
+            <div className="flex gap-6">
+              <Link to="/" className="hover:text-foreground">
+                Homepage
+              </Link>
+              <a href="mailto:hello@opentraces.dev" className="hover:text-foreground">
+                Contact
+              </a>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Trace viewer (/dashboard/traces/:id)                               */
+/* ------------------------------------------------------------------ */
+
+type StepBlock = {
+  type: string;
+  text?: string;
+  thinking?: string;
+  id?: string;
+  name?: string;
+  arguments?: unknown;
+};
+
+type StepRow = {
+  i: number;
+  role: "user" | "assistant" | "tool_result";
+  content: string | StepBlock[];
+  model?: string;
+  stop_reason?: string;
+  tool_call_id?: string;
+  tool_name?: string;
+  is_error?: boolean;
+  ts?: string;
+  usage?: { cost_usd?: number; total_tokens?: number };
+};
+
+type TraceHeaderData = {
+  agent?: { name?: string; model?: string; provider?: string };
+  env?: { repo_url?: string | null; base_commit?: string | null; branch?: string | null };
+  task?: { description?: string; source?: string };
+  usage?: { cost_usd?: number; total_tokens?: number };
+};
+
+function roleLabel(role: StepRow["role"]): string {
+  if (role === "user") return "User";
+  if (role === "assistant") return "Assistant";
+  return "Tool result";
+}
+
+function TextBody({ text }: { text: string }) {
+  return <p className="text-base leading-7 whitespace-pre-wrap text-foreground">{text}</p>;
+}
+
+function ThinkingBody({ thinking }: { thinking: string }) {
+  return (
+    <div className="rounded-lg bg-secondary px-4 py-3">
+      <div className="text-[11px] font-medium tracking-[0.15em] text-muted-foreground uppercase">
+        Thinking
+      </div>
+      <p className="mt-2 text-[15px] leading-7 whitespace-pre-wrap italic text-muted-foreground">
+        {thinking}
+      </p>
+    </div>
+  );
+}
+
+function ToolCallBody({ call }: { call: StepBlock }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950 shadow-lg shadow-neutral-900/10">
+      <div className="flex items-center gap-2 px-4 py-2.5">
+        <span className="font-mono text-[13px] font-medium text-emerald-400">tool</span>
+        <span className="font-mono text-[13px] font-medium text-neutral-100">{call.name}</span>
+        <span className="ml-auto font-mono text-[11px] text-neutral-500">{call.id}</span>
+      </div>
+      <pre className="overflow-x-auto border-t border-neutral-800 px-4 py-3 font-mono text-[13px] leading-6 text-neutral-300">
+        {JSON.stringify(call.arguments ?? {}, null, 2)}
+      </pre>
+    </div>
+  );
+}
+
+function ToolResultBody({ step }: { step: StepRow }) {
+  const blocks = Array.isArray(step.content) ? step.content : [];
+  const text = blocks
+    .map((b) => b.text ?? "")
+    .filter(Boolean)
+    .join("\n");
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-4 py-3",
+        step.is_error ? "border-destructive/40 bg-destructive/5" : "border-border bg-secondary"
+      )}
+    >
+      {step.is_error && (
+        <div className="mb-1.5 text-[11px] font-medium tracking-[0.15em] text-destructive uppercase">
+          Error
+        </div>
+      )}
+      <pre className="overflow-x-auto font-mono text-[13px] leading-6 whitespace-pre-wrap text-foreground/80">
+        {text || "(empty)"}
+      </pre>
+    </div>
+  );
+}
+
+function StepCard({ step }: { step: StepRow }) {
+  const blocks = Array.isArray(step.content) ? step.content : [];
+  return (
+    <div className="flex gap-4 sm:gap-6">
+      <div className="w-12 shrink-0 pt-0.5 text-right sm:w-16">
+        <div className="font-mono text-[11px] text-muted-foreground/50 tabular-nums">
+          {String(step.i).padStart(3, "0")}
+        </div>
+        <div
+          className={cn(
+            "mt-1 text-[11px] font-medium tracking-[0.15em] uppercase",
+            step.role === "user" ? "text-foreground" : "text-muted-foreground"
+          )}
+        >
+          {roleLabel(step.role).split(" ")[0]}
+        </div>
+        {step.role === "assistant" && step.usage?.total_tokens != null && (
+          <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/50 tabular-nums">
+            {step.usage.total_tokens > 999
+              ? `${(step.usage.total_tokens / 1000).toFixed(1)}k`
+              : step.usage.total_tokens}{" "}
+            tok
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1 space-y-3 border-l border-border pb-1 pl-4 sm:pl-6">
+        {step.role === "user" && typeof step.content === "string" && <TextBody text={step.content} />}
+        {blocks.map((b, j) => {
+          if (b.type === "text" && b.text) return <TextBody key={j} text={b.text} />;
+          if (b.type === "thinking" && b.thinking) return <ThinkingBody key={j} thinking={b.thinking} />;
+          if (b.type === "toolCall") return <ToolCallBody key={j} call={b} />;
+          return null;
+        })}
+        {step.role === "tool_result" && <ToolResultBody step={step} />}
+      </div>
+    </div>
+  );
+}
+
+function TraceDetail({ id }: { id: string }) {
+  const { getToken } = useAuth();
+  const [data, setData] = useState<{
+    trace: TraceRow & { scrub_report?: string | null };
+    header: TraceHeaderData | null;
+    steps: StepRow[];
+    parse_error: string | null;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [visible, setVisible] = useState(50);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("no session");
+        const res = await fetch(`${API_URL}/v1/traces/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(`trace request failed (${res.status})`);
+        const body = await res.json();
+        if (!cancelled) setData(body);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "failed to load trace");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken, id]);
+
+  const t = data?.trace;
+  const header = data?.header;
+  const steps = data?.steps ?? [];
+  const title = t?.task_desc ?? header?.task?.description ?? t?.repo_url ?? id;
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <DashboardNav />
+      <main>
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-3xl px-6 pt-10 pb-10">
+            <Button variant="ghost" size="sm" className="-ml-2" asChild>
+              <Link to="/dashboard">
+                <ArrowRight className="rotate-180" />
+                Back to vault
+              </Link>
+            </Button>
+            <h1 className="mt-4 text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+              {title}
+            </h1>
+            {t ? (
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                <StatusBadge status={t.status} />
+                <span className="flex items-center gap-1.5">
+                  <img src="/agents/pi.svg" alt="" className="h-3.5 w-3.5" />
+                  {t.agent}
+                </span>
+                {t.model && <span className="font-mono text-xs">{t.model}</span>}
+                <span className="tabular-nums">{t.n_steps} steps</span>
+                {t.cost_usd != null && <span className="tabular-nums">${t.cost_usd.toFixed(2)}</span>}
+                <span>{t.created_at.slice(0, 10)}</span>
+                {(t.repo_url || header?.env?.repo_url) && (
+                  <span className="font-mono text-xs">
+                    {t.repo_url ?? header?.env?.repo_url}
+                    {(t.base_commit || header?.env?.base_commit) != null && (
+                      <span className="text-muted-foreground/60">
+                        @{(t.base_commit ?? header?.env?.base_commit ?? "").slice(0, 7)}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </div>
+            ) : null}
+            {data?.parse_error && (
+              <p className="mt-3 text-sm text-destructive">
+                Stored blob could not be parsed: {data.parse_error}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="mx-auto max-w-3xl px-6 py-12">
+          {error ? (
+            <p className="text-center text-sm text-muted-foreground">Could not load this trace: {error}</p>
+          ) : data === null ? (
+            <p className="text-center text-sm text-muted-foreground">Loading trace…</p>
+          ) : (
+            <>
+              <div className="space-y-8">
+                {steps.slice(0, visible).map((s) => (
+                  <StepCard key={s.i} step={s} />
+                ))}
+              </div>
+              {steps.length > visible && (
+                <div className="mt-6 text-center">
+                  <Button variant="outline" onClick={() => setVisible((v) => v + 100)}>
+                    Show {Math.min(100, steps.length - visible)} more of {steps.length} steps
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Device approval (/cli/auth) — CLI login lands here                 */
+/* ------------------------------------------------------------------ */
+
+const API_URL = import.meta.env.VITE_API_URL ?? "https://opentraces-api.lalitmadan.workers.dev";
+
+function DeviceApprove() {
+  const { isSignedIn } = useAuth();
+  const { getToken } = useAuth();
+  const { openSignIn } = useClerk();
+  const [code] = useState(
+    () => new URLSearchParams(window.location.search).get("user_code")?.toUpperCase() ?? ""
+  );
+  const [state, setState] = useState<"idle" | "working" | "done" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const [typed, setTyped] = useState(code);
+  const autoOpened = useRef(false);
+
+  // Already-logged-in users land straight on Approve. Otherwise open the
+  // sign-in modal automatically; a button stays as popup-blocker fallback.
+  useEffect(() => {
+    if (!isSignedIn && !autoOpened.current) {
+      autoOpened.current = true;
+      openSignIn();
+    }
+  }, [isSignedIn, openSignIn]);
+
+  const approve = async () => {
+    setState("working");
+    setMessage("");
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("no session");
+      const res = await fetch(`${API_URL}/v1/device/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ user_code: typed.trim() }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `failed (${res.status})`);
+      }
+      setState("done");
+    } catch (e) {
+      setState("error");
+      setMessage(e instanceof Error ? e.message : "something went wrong");
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <header className="border-b border-border">
+        <div className="mx-auto flex h-14 max-w-5xl items-center px-6">
+          <Link to="/" aria-label="opentraces home">
+            <Logo />
+          </Link>
+        </div>
+      </header>
+      <main className="flex flex-1 items-center justify-center px-6 py-24">
+        <div className="w-full max-w-md">
+          <Eyebrow>Device login</Eyebrow>
+          <h1 className="mt-4 text-3xl font-semibold tracking-tight">
+            Approve terminal login
+          </h1>
+          {state === "done" ? (
+            <>
+              <p className="mt-4 text-sm leading-6 text-muted-foreground">
+                Approved. Return to your terminal, it is already logged in. You
+                can close this window.
+              </p>
+              <div className="mt-8">
+                <Button asChild>
+                  <Link to="/dashboard">Go to your vault</Link>
+                </Button>
+              </div>
+            </>
+          ) : !isSignedIn ? (
+            <>
+              <p className="mt-4 text-sm leading-6 text-muted-foreground">
+                Sign in to approve the login request from your terminal. The
+                sign-in window should have opened; if your browser blocked it,
+                use the button below.
+              </p>
+              <div className="mt-8">
+                <Button onClick={() => openSignIn()}>Sign in to continue</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-4 text-sm leading-6 text-muted-foreground">
+                Your terminal is asking to connect. Confirm the code below
+                matches the one shown there, then approve.
+              </p>
+              {!code && (
+                <input
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value.toUpperCase())}
+                  placeholder="XXXX-XXXX"
+                  maxLength={9}
+                  className="mt-6 w-full border border-input bg-background px-3 py-2 font-mono text-lg tracking-[0.3em] outline-none focus:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                />
+              )}
+              {message && <p className="mt-2 text-sm text-destructive">{message}</p>}
+              <div className="mt-6">
+                <Button onClick={approve} disabled={state === "working" || typed.length < 9}>
+                  {state === "working" ? "Approving…" : "Approve login"}
+                </Button>
+              </div>
+              <p className="mt-8 text-xs leading-5 text-muted-foreground">
+                Approving creates an API key for your account. It is delivered
+                straight to your terminal and never shown in the browser. The
+                request expires in 10 minutes.
+              </p>
+            </>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Routes                                                             */
+/*  /           landing (sign-in via modal, sign-up via /sign-up)      */
+/*  /sign-up    Clerk sign-up page; signed-in users go to /dashboard   */
+/*  /cli/auth   approve a terminal login (device flow)                 */
+/*  /dashboard  vault; signed-out users are redirected to sign-up      */
+/* ------------------------------------------------------------------ */
+
+function Routes() {
+  const path = usePath();
+  const { isLoaded, isSignedIn } = useAuth();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [path]);
+
+  if (!isLoaded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <span className="text-sm text-muted-foreground">Loading…</span>
+      </div>
+    );
+  }
+
+  if (path === "/dashboard") {
+    return isSignedIn ? <Dashboard /> : <RedirectToSignUp />;
+  }
+
+  const traceMatch = path.match(/^\/dashboard\/traces\/([A-Za-z0-9_]+)$/);
+  if (traceMatch) {
+    return isSignedIn ? <TraceDetail id={traceMatch[1]} /> : <RedirectToSignUp />;
+  }
+
+  if (path === "/sign-up") {
+    return isSignedIn ? <Navigate to="/dashboard" /> : <SignUpPage />;
+  }
+
+  if (path === "/cli/auth") {
+    return <DeviceApprove />;
+  }
+
+  return <Landing />;
+}
+
+function RedirectToSignUp() {
+  useEffect(() => {
+    navigate("/sign-up");
+  }, []);
+  return null;
+}
+
+export default Routes;

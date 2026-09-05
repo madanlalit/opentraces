@@ -91,3 +91,15 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_org ON ledger_entries(org_id, created_at DESC);
+
+-- OAuth-style device flow for `ot login`.
+-- lifecycle: pending → approved (key stashed once) → consumed (row deleted on poll)
+CREATE TABLE IF NOT EXISTS device_auths (
+  device_code  TEXT PRIMARY KEY,                 -- 32 random bytes hex, CLI polls with
+  user_code    TEXT NOT NULL UNIQUE,             -- human-typed, e.g. K7Q2-XM4P
+  org_id       TEXT REFERENCES orgs(id),         -- set at approval
+  key_id       TEXT,                             -- created at approval
+  secret       TEXT,                             -- full ot_live secret, stashed until first poll
+  status       TEXT NOT NULL DEFAULT 'pending',  -- pending | approved
+  expires_at   TEXT NOT NULL                     -- created_at + 10 min
+);
