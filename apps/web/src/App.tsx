@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Show, SignUp, useAuth, useClerk, UserButton, useUser } from "@clerk/react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -173,7 +173,9 @@ function Hero() {
         </Badge>
 
         <h1 className="mx-auto mt-8 max-w-3xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl">
-          Get paid for the work your agent already did.
+          Get paid for the work your{" "}
+          <span className="underline decoration-neutral-300 decoration-[4px] underline-offset-8">agent</span>{" "}
+          already did.
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-pretty text-muted-foreground">
           OpenTraces turns your coding agent sessions into training data that
@@ -607,7 +609,39 @@ type TraceRow = {
   cost_usd: number | null;
   status: string;
   created_at: string;
+  content_hash?: string | null;
 };
+
+function CopyChip({ text, display }: { text: string; display?: string }) {
+  const [ok, setOk] = useState(false);
+  return (
+    <button
+      type="button"
+      title="Copy"
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(text).then(() => {
+          setOk(true);
+          setTimeout(() => setOk(false), 1200);
+        });
+      }}
+      className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
+    >
+      {ok ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+      {display ?? text}
+    </button>
+  );
+}
+
+function StatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    uploaded: "Received",
+    scrubbing: "Cleaning",
+    scrubbed: "Ready",
+    rejected: "Rejected",
+  };
+  return map[status] ?? status.charAt(0).toUpperCase() + status.slice(1);
+}
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; variant: "default" | "outline" | "secondary" | "destructive" }> = {
@@ -626,9 +660,10 @@ function VaultTable({ traces, onOpen }: { traces: TraceRow[]; onOpen: (id: strin
       <thead>
         <tr className="border-b border-border text-left text-xs font-medium text-muted-foreground">
           <th className="py-3 pr-4 font-medium">Session</th>
+          <th className="py-3 pr-4 font-medium">Trace</th>
           <th className="py-3 pr-4 font-medium">Agent</th>
-          <th className="py-3 pr-4 font-medium">Model</th>
           <th className="py-3 pr-4 text-right font-medium">Steps</th>
+          <th className="py-3 pr-4 text-right font-medium">Cost</th>
           <th className="py-3 pr-4 font-medium">Status</th>
           <th className="py-3 text-right font-medium">Uploaded</th>
         </tr>
@@ -640,12 +675,31 @@ function VaultTable({ traces, onOpen }: { traces: TraceRow[]; onOpen: (id: strin
             onClick={() => onOpen(t.id)}
             className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-accent/50"
           >
-            <td className="max-w-56 py-3 pr-4 truncate font-medium" title={t.task_desc ?? t.repo_url ?? t.id}>
-              {t.task_desc ?? t.repo_url ?? t.id}
+            <td className="max-w-56 py-3 pr-4">
+              <div className="truncate font-medium" title={t.task_desc ?? t.repo_url ?? t.id}>
+                {t.task_desc ?? t.repo_url ?? t.id}
+              </div>
+              {t.repo_url && (
+                <div className="truncate text-xs text-muted-foreground" title={t.repo_url}>
+                  {t.repo_url}
+                </div>
+              )}
             </td>
-            <td className="py-3 pr-4">{t.agent}</td>
-            <td className="py-3 pr-4 text-muted-foreground">{t.model ?? "–"}</td>
+            <td className="py-3 pr-4">
+              <CopyChip text={t.id} display={t.id.slice(3, 11)} />
+            </td>
+            <td className="max-w-40 py-3 pr-4">
+              <div>{t.agent}</div>
+              {t.model && (
+                <div className="truncate font-mono text-xs text-muted-foreground" title={t.model}>
+                  {t.model}
+                </div>
+              )}
+            </td>
             <td className="py-3 pr-4 text-right tabular-nums">{t.n_steps}</td>
+            <td className="py-3 pr-4 text-right tabular-nums">
+              {t.cost_usd != null ? `$${t.cost_usd.toFixed(2)}` : "–"}
+            </td>
             <td className="py-3 pr-4">
               <StatusBadge status={t.status} />
             </td>
@@ -708,6 +762,8 @@ function Dashboard() {
   const [traces, setTraces] = useState<TraceRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sortKey, setSortKey] = useState<"new" | "steps" | "cost">("new");
   // Best available name: first name, then full name, username, email prefix.
   const first =
     user?.firstName ??
@@ -747,6 +803,25 @@ function Dashboard() {
   const steps = traces?.reduce((n, t) => n + t.n_steps, 0) ?? 0;
   const spend = traces?.reduce((n, t) => n + (t.cost_usd ?? 0), 0) ?? 0;
   const ready = traces?.filter((t) => t.status === "scrubbed").length ?? 0;
+
+  const statusCounts = new Map<string, number>();
+  for (const t of traces ?? []) statusCounts.set(t.status, (statusCounts.get(t.status) ?? 0) + 1);
+  const repos = new Set((traces ?? []).map((t) => t.repo_url).filter(Boolean)).size;
+  const agentCounts = new Map<string, number>();
+  for (const t of traces ?? []) agentCounts.set(t.agent, (agentCounts.get(t.agent) ?? 0) + 1);
+  const agentsText = [...agentCounts.entries()].map(([a, n]) => `${a} ${n}`).join(" · ");
+
+  const shown = (() => {
+    let list = traces ?? [];
+    if (statusFilter !== "all") list = list.filter((t) => t.status === statusFilter);
+    return [...list].sort((a, b) =>
+      sortKey === "steps"
+        ? b.n_steps - a.n_steps
+        : sortKey === "cost"
+          ? (b.cost_usd ?? 0) - (a.cost_usd ?? 0)
+          : b.created_at.localeCompare(a.created_at)
+    );
+  })();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -796,14 +871,52 @@ function Dashboard() {
               <GetStartedPanel />
             ) : (
               <>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <Eyebrow>Your traces</Eyebrow>
-                  <Button variant="ghost" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
-                    Refresh
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={sortKey}
+                      onChange={(e) => setSortKey(e.target.value as "new" | "steps" | "cost")}
+                      className="border border-input bg-background px-2 py-1.5 text-xs text-muted-foreground outline-none focus:border-ring"
+                    >
+                      <option value="new">Newest first</option>
+                      <option value="steps">Most steps</option>
+                      <option value="cost">Highest cost</option>
+                    </select>
+                    <Button variant="ghost" size="sm" onClick={() => setRefreshKey((k) => k + 1)}>
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                  <span>
+                    {traces.length} trace{traces.length === 1 ? "" : "s"} · {repos} repo{repos === 1 ? "" : "s"}
+                    {agentsText ? ` · ${agentsText}` : ""}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {["all", ...[...statusCounts.keys()]].map((s) => {
+                      const label = s === "all" ? "All" : StatusLabel(s);
+                      const count = s === "all" ? traces.length : (statusCounts.get(s) ?? 0);
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setStatusFilter(s)}
+                          className={cn(
+                            "border px-2 py-0.5 transition-colors",
+                            statusFilter === s
+                              ? "border-neutral-900 bg-neutral-900 text-white"
+                              : "border-border text-muted-foreground hover:border-neutral-400"
+                          )}
+                        >
+                          {label} {count}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="mt-4 border-t">
-                  <VaultTable traces={traces} onOpen={(id) => navigate(`/dashboard/traces/${id}`)} />
+                  <VaultTable traces={shown} onOpen={(id) => navigate(`/dashboard/traces/${id}`)} />
                 </div>
                 <p className="mt-6 text-sm text-muted-foreground">
                   Push more sessions with <span className="font-mono">ot push</span>. New
@@ -867,10 +980,37 @@ type StepRow = {
 
 type TraceHeaderData = {
   agent?: { name?: string; model?: string; provider?: string };
-  env?: { repo_url?: string | null; base_commit?: string | null; branch?: string | null };
+  env?: { repo_url?: string | null; base_commit?: string | null; branch?: string | null; files_touched?: string[] };
   task?: { description?: string; source?: string };
-  usage?: { cost_usd?: number; total_tokens?: number };
+  outcome?: { self_reported?: string };
+  attestation?: { rights_holder?: boolean; license?: string; consent?: string };
+  privacy?: { scrub?: string; secrets_removed?: number };
+  usage?: { input?: number; output?: number; total_tokens?: number; cost_usd?: number };
 };
+
+type TraceDetailData = {
+  trace: TraceRow & { scrub_report?: string | null; content_hash?: string | null };
+  header: TraceHeaderData | null;
+  steps: StepRow[];
+  parse_error: string | null;
+};
+
+function MetaGrid({ items }: { items: [string, React.ReactNode][] }) {
+  return (
+    <div className="grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-3">
+      {items.map(([k, v]) => (
+        <div key={k} className="min-w-0">
+          <div className="text-[11px] font-medium tracking-[0.15em] text-muted-foreground uppercase">
+            {k}
+          </div>
+          <div className="mt-1 truncate text-sm" title={typeof v === "string" ? v : undefined}>
+            {v}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function roleLabel(role: StepRow["role"]): string {
   if (role === "user") return "User";
@@ -938,7 +1078,7 @@ function ToolResultBody({ step }: { step: StepRow }) {
 function StepCard({ step }: { step: StepRow }) {
   const blocks = Array.isArray(step.content) ? step.content : [];
   return (
-    <div className="flex gap-4 sm:gap-6">
+    <div className="group flex gap-4 sm:gap-6">
       <div className="w-12 shrink-0 pt-0.5 text-right sm:w-16">
         <div className="font-mono text-[11px] text-muted-foreground/50 tabular-nums">
           {String(step.i).padStart(3, "0")}
@@ -960,7 +1100,15 @@ function StepCard({ step }: { step: StepRow }) {
           </div>
         )}
       </div>
-      <div className="min-w-0 flex-1 space-y-3 border-l border-border pb-1 pl-4 sm:pl-6">
+      <div className="relative min-w-0 flex-1 space-y-3 border-l border-border pb-1 pl-4 sm:pl-6">
+        <button
+          type="button"
+          title="Copy step as JSON"
+          onClick={() => navigator.clipboard.writeText(JSON.stringify(step, null, 2))}
+          className="absolute top-0 right-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </button>
         {step.role === "user" && typeof step.content === "string" && <TextBody text={step.content} />}
         {blocks.map((b, j) => {
           if (b.type === "text" && b.text) return <TextBody key={j} text={b.text} />;
@@ -976,14 +1124,11 @@ function StepCard({ step }: { step: StepRow }) {
 
 function TraceDetail({ id }: { id: string }) {
   const { getToken } = useAuth();
-  const [data, setData] = useState<{
-    trace: TraceRow & { scrub_report?: string | null };
-    header: TraceHeaderData | null;
-    steps: StepRow[];
-    parse_error: string | null;
-  } | null>(null);
+  const [data, setData] = useState<TraceDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(50);
+  const [roleFilter, setRoleFilter] = useState<"all" | StepRow["role"]>("all");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -1010,6 +1155,57 @@ function TraceDetail({ id }: { id: string }) {
   const header = data?.header;
   const steps = data?.steps ?? [];
   const title = t?.task_desc ?? header?.task?.description ?? t?.repo_url ?? id;
+
+  const filtered = steps.filter(
+    (s) =>
+      (roleFilter === "all" || s.role === roleFilter) &&
+      (!query || JSON.stringify(s).toLowerCase().includes(query.toLowerCase()))
+  );
+  const roleCounts = {
+    user: steps.filter((s) => s.role === "user").length,
+    assistant: steps.filter((s) => s.role === "assistant").length,
+    tool_result: steps.filter((s) => s.role === "tool_result").length,
+  };
+  const setRole = (r: typeof roleFilter) => {
+    setRoleFilter(r);
+    setVisible(50);
+  };
+
+  const meta: [string, React.ReactNode][] = [];
+  if (t?.repo_url || header?.env?.repo_url)
+    meta.push([
+      "Repository",
+      <span className="font-mono text-xs">
+        {t?.repo_url ?? header?.env?.repo_url}
+        {(t?.base_commit ?? header?.env?.base_commit) && (
+          <span className="text-muted-foreground">
+            @{(t?.base_commit ?? header?.env?.base_commit ?? "").slice(0, 7)}
+          </span>
+        )}
+      </span>,
+    ]);
+  if (header?.env?.branch) meta.push(["Branch", <span className="font-mono text-xs">{header.env.branch}</span>]);
+  if (header?.attestation?.license)
+    meta.push(["License", <span className="font-mono text-xs">{header.attestation.license}</span>]);
+  if (header?.outcome?.self_reported)
+    meta.push(["Seller outcome", <span className="capitalize">{header.outcome.self_reported}</span>]);
+  if (header?.usage?.total_tokens != null)
+    meta.push(["Total tokens", <span className="tabular-nums">{header.usage.total_tokens.toLocaleString()}</span>]);
+  if (header?.task?.source) meta.push(["Task source", header.task.source]);
+  if (header?.privacy?.scrub)
+    meta.push([
+      "Scrub",
+      <span>
+        {header.privacy.scrub}
+        {header.privacy.secrets_removed != null && header.privacy.secrets_removed > 0
+          ? ` · ${header.privacy.secrets_removed} secrets removed`
+          : ""}
+      </span>,
+    ]);
+  if (t?.created_at) meta.push(["Uploaded", <span className="tabular-nums">{t.created_at.slice(0, 16)}</span>]);
+  if (t?.id) meta.push(["Trace ID", <CopyChip text={t.id} display={t.id.slice(0, 14) + "…"} />]);
+  if (t?.content_hash)
+    meta.push(["Content hash", <CopyChip text={t.content_hash} display={t.content_hash.slice(0, 10) + "…"} />]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -1054,6 +1250,11 @@ function TraceDetail({ id }: { id: string }) {
                 Stored blob could not be parsed: {data.parse_error}
               </p>
             )}
+            {meta.length > 0 && (
+              <div className="mt-6 border-t border-border pt-6">
+                <MetaGrid items={meta} />
+              </div>
+            )}
           </div>
         </div>
 
@@ -1064,15 +1265,52 @@ function TraceDetail({ id }: { id: string }) {
             <p className="text-center text-sm text-muted-foreground">Loading trace…</p>
           ) : (
             <>
-              <div className="space-y-8">
-                {steps.slice(0, visible).map((s) => (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(["all", "user", "assistant", "tool_result"] as const).map((r) => {
+                    const count = r === "all" ? steps.length : roleCounts[r];
+                    if (r !== "all" && count === 0) return null;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setRole(r)}
+                        className={cn(
+                          "border px-2.5 py-1 text-xs transition-colors",
+                          roleFilter === r
+                            ? "border-neutral-900 bg-neutral-900 text-white"
+                            : "border-border text-muted-foreground hover:border-neutral-400"
+                        )}
+                      >
+                        {r === "all" ? "All" : roleLabel(r)} {count}
+                      </button>
+                    );
+                  })}
+                </div>
+                <input
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setVisible(50);
+                  }}
+                  placeholder="Search steps…"
+                  className="w-44 border border-input bg-background px-2.5 py-1.5 text-xs outline-none placeholder:text-muted-foreground/60 focus:border-ring"
+                />
+              </div>
+              <div className="mt-8 space-y-8">
+                {filtered.slice(0, visible).map((s) => (
                   <StepCard key={s.i} step={s} />
                 ))}
+                {filtered.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground">
+                    No steps match this filter.
+                  </p>
+                )}
               </div>
-              {steps.length > visible && (
+              {filtered.length > visible && (
                 <div className="mt-6 text-center">
                   <Button variant="outline" onClick={() => setVisible((v) => v + 100)}>
-                    Show {Math.min(100, steps.length - visible)} more of {steps.length} steps
+                    Show {Math.min(100, filtered.length - visible)} more of {filtered.length} steps
                   </Button>
                 </div>
               )}
