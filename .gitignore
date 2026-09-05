@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+.env.local
+*.local
+
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.ruff_cache/
+
+.DS_Store
+schema/ot-0.2.json

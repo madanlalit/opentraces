@@ -1,0 +1,24 @@
+{
+  "name": "opentraces",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @opentraces/api",
+    "dev:web": "npm run dev -w @opentraces/web",
+    "db:local": "npm run db:local -w @opentraces/api",
+    "schema:export": "npm run export -w @opentraces/schema",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "allowScripts": {
+    "workerd@1.20260903.1": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.28.1": true,
+    "@clerk/shared@3.47.8": true
+  }
+}

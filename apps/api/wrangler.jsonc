@@ -1,0 +1,26 @@
+// Cloudflare Worker — OpenTraces API
+// Create the D1 database first:  pnpm --filter @opentraces/api exec wrangler d1 create opentraces
+// then paste the returned database_id below. R2 bucket: wrangler r2 bucket create opentraces-traces
+{
+  "name": "opentraces-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-01",
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "opentraces",
+      "database_id": "REPLACE_WITH_D1_ID"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "TRACES",
+      "bucket_name": "opentraces-traces"
+    }
+  ]
+
+  // Phase 1.5: queue producer for async scrub pipeline
+  // "queues": { "producers": [{ "binding": "SCRUB", "queue": "trace-scrub" }] }
+}
