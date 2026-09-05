@@ -1512,77 +1512,173 @@ function HowPage() {
           <div className="mx-auto max-w-5xl px-6 pt-20 pb-20 text-center">
             <Eyebrow>Guide</Eyebrow>
             <h1 className="mx-auto mt-4 max-w-2xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-              From laptop to training data
+              How OpenTraces works
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
-              Four steps, about five minutes. Everything after step three is on
-              us.
+              No AI expertise needed. If you can run one command, you can sell.
             </p>
           </div>
         </div>
 
-        <div className="mx-auto max-w-5xl space-y-16 px-6 py-16">
-          <HowStep
-            n="1"
-            title="Install the CLI"
-            body={
-              <>
-                <p>
-                  One command with uv. Requires Python 3.10 or newer; uv sets
-                  everything else up in its own environment.
+        {/* what is a trace */}
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 py-16">
+            <Eyebrow>The basics</Eyebrow>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight">
+              What is an agent trace?
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Every time you work with a coding agent like pi, the whole
+              session is saved on your computer: what you asked for, what the
+              agent planned, the commands it ran, the files it changed, and how
+              it knew it was done. That complete record is called a trace.
+            </p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Think of it as the flight recorder of your development work, or
+              the full recipe a chef used, not just the final dish.
+            </p>
+            <div className="mt-8 max-w-2xl overflow-hidden rounded-xl border border-border">
+              {[
+                ["You ask", "The login button does nothing on Safari"],
+                ["Agent thinks", "Check auth.py, the click handler is missing"],
+                ["Agent acts", "Edits two lines, runs the test suite"],
+                ["Proof", "41 tests pass"],
+                ["Result", "Bug fixed, every step recorded"],
+              ].map(([k, v]) => (
+                <div
+                  key={k}
+                  className="flex gap-4 border-b border-border px-4 py-3 text-sm last:border-0"
+                >
+                  <span className="w-28 shrink-0 text-xs font-medium tracking-[0.15em] text-muted-foreground uppercase">
+                    {k}
+                  </span>
+                  <span className="text-foreground/90">{v}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 text-sm text-muted-foreground">
+              That is a five step trace. Real sessions are often hundreds of
+              steps long, and that depth is exactly what makes them valuable.
+            </p>
+          </div>
+        </div>
+
+        {/* why labs pay */}
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 py-16">
+            <Eyebrow>Why it sells</Eyebrow>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight">
+              Why do labs pay for this?
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-muted-foreground">
+              AI labs are racing to make coding agents better. The best way to
+              teach an agent is to show it thousands of real problems being
+              solved for real: messy repositories, failing tests, careful
+              fixes, actual tool calls. Textbook examples are everywhere.
+              Real work is rare, and rare is valuable.
+            </p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Think of how an apprentice learns: not from reading recipes, but
+              from watching a chef cook. Your traces are the cooking.
+            </p>
+          </div>
+        </div>
+
+        {/* safety */}
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 py-16">
+            <Eyebrow>Safety</Eyebrow>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight">
+              Your work, your terms
+            </h2>
+            <div className="mt-8 grid gap-8 md:grid-cols-3">
+              <div>
+                <h3 className="text-lg font-medium">You pick what leaves</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Nothing is uploaded automatically. You see the exact list of
+                  sessions and choose which ones to sell.
                 </p>
-                <p className="mt-2">
-                  Once we publish to PyPI this shortens to{" "}
-                  <span className="font-mono text-xs">uv tool install opentraces</span>.
+              </div>
+              <div>
+                <h3 className="text-lg font-medium">Secrets never survive</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Passwords, API keys, and your personal file paths are removed
+                  automatically before anything can be sold. Every trace ships
+                  with a report of what was removed.
                 </p>
-              </>
-            }
-            terminal={[installCmd, "ot version"]}
-          />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium">You keep 80%</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  You stay the owner: you license the data, you can stop
+                  selling at any time, and you keep 80% of every sale.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
 
-          <HowStep
-            n="2"
-            title="Log in from your browser"
-            body={
-              <p>
-                <span className="font-mono text-xs">ot login</span> shows a
-                short code and opens your browser. Approve there and the API
-                key is delivered straight to your terminal. It is never shown
-                on any web page, and it is stored in
-                <span className="font-mono text-xs"> ~/.opentraces/credentials</span>.
-              </p>
-            }
-            terminal={["ot login", "ot whoami"]}
-          />
-
-          <HowStep
-            n="3"
-            title="Push the sessions you choose"
-            body={
-              <p>
-                <span className="font-mono text-xs">ot push</span> scans the
-                sessions stored on your machine and shows a table: what the
-                session did, how many steps, which repo. You pick lines, we
-                upload only those. Repo allowlists let you never think about
-                it again.
-              </p>
-            }
-            terminal={["ot push", "ot push --all --limit 5"]}
-          />
-
-          <HowStep
-            n="4"
-            title="We scrub it training-ready"
-            body={
-              <p>
-                On our side every trace is cleaned automatically: secret
-                patterns are redacted, home paths are anonymized, and quality
-                gates reject sessions that are not worth training on. A scrub
-                report on every trace shows exactly what was removed.
-              </p>
-            }
-            terminal={["# watch your vault", "# Received → Cleaning → Ready"]}
-          />
+        {/* steps */}
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 py-16">
+            <Eyebrow>Do it</Eyebrow>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight">
+              Four steps, about five minutes
+            </h2>
+            <div className="mt-12 space-y-16">
+              <HowStep
+                n="1"
+                title="Install the CLI"
+                body={
+                  <p>
+                    Copy one command into your terminal. It needs Python 3.10
+                    or newer, and uv sets everything else up in its own
+                    environment, so nothing about your system changes.
+                  </p>
+                }
+                terminal={[installCmd, "ot version"]}
+              />
+              <HowStep
+                n="2"
+                title="Log in with one click"
+                body={
+                  <p>
+                    <span className="font-mono text-xs">ot login</span> shows a
+                    short code and opens your browser. You approve, and your
+                    personal key is delivered straight to your terminal. It is
+                    never shown on any web page.
+                  </p>
+                }
+                terminal={["ot login", "ot whoami"]}
+              />
+              <HowStep
+                n="3"
+                title="Pick the sessions to sell"
+                body={
+                  <p>
+                    <span className="font-mono text-xs">ot push</span> lists
+                    your recent agent sessions in a table, like a menu. Each
+                    row shows what the session did and how big it is. You pick
+                    the lines you want and only those are uploaded.
+                  </p>
+                }
+                terminal={["ot push", "ot push --all --limit 5"]}
+              />
+              <HowStep
+                n="4"
+                title="We clean it, you watch it turn Ready"
+                body={
+                  <p>
+                    Our scrubber removes anything sensitive, checks quality,
+                    and marks the trace Ready for sale. You see the status and
+                    the full cleaning report in your dashboard. Nothing to do
+                    but wait a minute.
+                  </p>
+                }
+                terminal={["# watch your vault", "# Received \u2192 Cleaning \u2192 Ready"]}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="border-b border-border">
@@ -1619,7 +1715,7 @@ function HowPage() {
 
         <Section className="text-center">
           <h2 className="mx-auto max-w-xl text-3xl font-semibold tracking-tight text-balance">
-            Ready to sell your first trace?
+            Turn yesterday's work into income.
           </h2>
           <div className="mt-8 flex justify-center">
             <PrimaryCta />
