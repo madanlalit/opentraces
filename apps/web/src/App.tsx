@@ -173,7 +173,7 @@ function Hero() {
         </Badge>
 
         <h1 className="mx-auto mt-8 max-w-3xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl">
-          Your agent already did the work.
+          Get paid for the work your agent already did.
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-pretty text-muted-foreground">
           OpenTraces turns your coding agent sessions into training data that
