@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { parseTraceNDJSON, TraceParseError } from "@opentraces/schema";
 import { clerkAuth } from "./auth";
+import { scrubTraceNdjson, type ScrubReport } from "./scrub/scrub";
 
 // Dashboard origins allowed to call this API from a browser.
 // Local dev (Vite) + the production Pages deployment.
@@ -260,6 +261,71 @@ app.post("/v1/traces", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// Scrub pipeline — uploaded → scrubbing → scrubbed | rejected.
+// v0 runs on a Cron Trigger sweep (free tier); the function is queue-ready:
+// swap sweepUploaded() for a queue consumer without touching scrub logic.
+// ---------------------------------------------------------------------------
+
+async function scrubTraceById(env: Env, traceId: string): Promise<ScrubReport | null> {
+  const row = await env.DB.prepare("SELECT org_id, blob_key, status FROM traces WHERE id = ?")
+    .bind(traceId)
+    .first<{ org_id: string; blob_key: string; status: string }>();
+  if (!row) return null;
+
+  await env.DB.prepare("UPDATE traces SET status = 'scrubbing' WHERE id = ?").bind(traceId).run();
+
+  try {
+    const obj = await env.TRACES.get(row.blob_key);
+    if (!obj) throw new Error("blob missing");
+    const text = await obj.text();
+
+    const outcome = scrubTraceNdjson(text);
+
+    if (outcome.rejected) {
+      await env.DB.prepare(
+        "UPDATE traces SET status = 'rejected', scrub_report = ? WHERE id = ?"
+      )
+        .bind(JSON.stringify(outcome.report), traceId)
+        .run();
+      return outcome.report;
+    }
+
+    // Scrubbed blob replaces the served blob; the original stays at its
+    // traces/{org}/{id} key for audit (derivable from org_id + id).
+    const scrubbedKey = row.blob_key.replace(/^traces\//, "scrubbed/");
+    await env.TRACES.put(scrubbedKey, outcome.ndjson!, {
+      httpMetadata: { contentType: "application/x-ndjson" },
+    });
+    await env.DB.prepare(
+      "UPDATE traces SET status = 'scrubbed', scrub_report = ?, blob_key = ? WHERE id = ?"
+    )
+      .bind(JSON.stringify(outcome.report), scrubbedKey, traceId)
+      .run();
+    return outcome.report;
+  } catch (e) {
+    // Put the trace back so the sweep retries it next minute.
+    await env.DB.prepare("UPDATE traces SET status = 'uploaded' WHERE id = ?").bind(traceId).run();
+    throw e;
+  }
+}
+
+async function sweepUploaded(env: Env): Promise<number> {
+  const { results } = await env.DB.prepare(
+    "SELECT id FROM traces WHERE status = 'uploaded' ORDER BY created_at LIMIT 50"
+  ).all<{ id: string }>();
+  let done = 0;
+  for (const r of results) {
+    try {
+      await scrubTraceById(env, r.id);
+      done++;
+    } catch {
+      // retried by the next sweep; errors must not block the batch
+    }
+  }
+  return done;
+}
+
+// ---------------------------------------------------------------------------
 // Traces — read back (vault list + detail)
 // ---------------------------------------------------------------------------
 
@@ -303,4 +369,23 @@ app.get("/v1/traces/:id", async (c) => {
   return c.json({ trace, header, steps, parse_error });
 });
 
-export default app;
+// Manual (re-)scrub: same path the cron uses. Useful for tests and a future
+// "rescrub" action in the vault.
+app.post("/v1/traces/:id/scrub", async (c) => {
+  const orgId = c.get("orgId");
+  const id = c.req.param("id");
+  const owned = await c.env.DB.prepare("SELECT id FROM traces WHERE id = ? AND org_id = ?")
+    .bind(id, orgId)
+    .first();
+  if (!owned) return c.json({ error: "not found" }, 404);
+  const report = await scrubTraceById(c.env, id);
+  if (!report) return c.json({ error: "not found" }, 404);
+  return c.json({ status: report.rejected ? "rejected" : "scrubbed", report });
+});
+
+export default {
+  fetch: app.fetch,
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(sweepUploaded(env));
+  },
+};

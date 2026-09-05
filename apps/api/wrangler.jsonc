@@ -23,6 +23,10 @@
 
   "vars": {
     "CLERK_ISSUER": "https://factual-antelope-41.clerk.accounts.dev"
+  },
+
+  "triggers": {
+    "crons": ["* * * * *"]
   }
 
   // Phase 1.5: queue producer for async scrub pipeline

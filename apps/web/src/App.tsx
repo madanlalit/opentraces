@@ -186,7 +186,7 @@ function Hero() {
         <div className="mt-8 flex items-center justify-center gap-3">
           <PrimaryCta />
           <Button variant="outline" size="lg" asChild>
-            <a href="#how">How it works</a>
+            <Link to="/how">How it works</Link>
           </Button>
         </div>
         <p className="mt-6 text-sm text-muted-foreground">
@@ -461,9 +461,9 @@ function Footer() {
             <span>built on the pi coding agent</span>
           </div>
           <div className="flex gap-6">
-            <a href="#how" className="hover:text-foreground">
+            <Link to="/how" className="hover:text-foreground">
               How it works
-            </a>
+            </Link>
             <a href="#labs" className="hover:text-foreground">
               For labs
             </a>
@@ -588,7 +588,13 @@ function Terminal({ lines }: { lines: string[] }) {
         <code>
           {lines.map((line, i) => (
             <span key={i}>
-              <span className="text-neutral-500">$</span> {line}
+              {line.startsWith("#") ? (
+                <span className="text-neutral-500">{line}</span>
+              ) : (
+                <>
+                  <span className="text-neutral-500">$</span> {line}
+                </>
+              )}
               {"\n"}
             </span>
           ))}
@@ -1444,6 +1450,189 @@ function DeviceApprove() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  /how — install & workflow guide                                    */
+/* ------------------------------------------------------------------ */
+
+function HowNav() {
+  return (
+    <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
+        <Link to="/" aria-label="opentraces home">
+          <Logo />
+        </Link>
+        <nav className="flex items-center">
+          <Show when="signed-in">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/dashboard">Dashboard</Link>
+            </Button>
+          </Show>
+          <Show when="signed-out">
+            <SignInButtonMenu />
+          </Show>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+function HowStep({
+  n,
+  title,
+  body,
+  terminal,
+}: {
+  n: string;
+  title: string;
+  body: React.ReactNode;
+  terminal: string[];
+}) {
+  return (
+    <div className="grid items-start gap-8 md:grid-cols-2 md:gap-12">
+      <div>
+        <div className="text-xs font-medium tracking-[0.2em] text-muted-foreground uppercase">
+          Step {n}
+        </div>
+        <h2 className="mt-3 text-2xl font-semibold tracking-tight">{title}</h2>
+        <div className="mt-3 text-sm leading-6 text-muted-foreground">{body}</div>
+      </div>
+      <Terminal lines={terminal} />
+    </div>
+  );
+}
+
+function HowPage() {
+  const installCmd =
+    "uv tool install 'opentraces @ git+https://github.com/madanlalit/opentraces#subdirectory=cli'";
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <HowNav />
+
+      <main>
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 pt-20 pb-20 text-center">
+            <Eyebrow>Guide</Eyebrow>
+            <h1 className="mx-auto mt-4 max-w-2xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+              From laptop to training data
+            </h1>
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+              Four steps, about five minutes. Everything after step three is on
+              us.
+            </p>
+          </div>
+        </div>
+
+        <div className="mx-auto max-w-5xl space-y-16 px-6 py-16">
+          <HowStep
+            n="1"
+            title="Install the CLI"
+            body={
+              <>
+                <p>
+                  One command with uv. Requires Python 3.10 or newer; uv sets
+                  everything else up in its own environment.
+                </p>
+                <p className="mt-2">
+                  Once we publish to PyPI this shortens to{" "}
+                  <span className="font-mono text-xs">uv tool install opentraces</span>.
+                </p>
+              </>
+            }
+            terminal={[installCmd, "ot version"]}
+          />
+
+          <HowStep
+            n="2"
+            title="Log in from your browser"
+            body={
+              <p>
+                <span className="font-mono text-xs">ot login</span> shows a
+                short code and opens your browser. Approve there and the API
+                key is delivered straight to your terminal. It is never shown
+                on any web page, and it is stored in
+                <span className="font-mono text-xs"> ~/.opentraces/credentials</span>.
+              </p>
+            }
+            terminal={["ot login", "ot whoami"]}
+          />
+
+          <HowStep
+            n="3"
+            title="Push the sessions you choose"
+            body={
+              <p>
+                <span className="font-mono text-xs">ot push</span> scans the
+                sessions stored on your machine and shows a table: what the
+                session did, how many steps, which repo. You pick lines, we
+                upload only those. Repo allowlists let you never think about
+                it again.
+              </p>
+            }
+            terminal={["ot push", "ot push --all --limit 5"]}
+          />
+
+          <HowStep
+            n="4"
+            title="We scrub it training-ready"
+            body={
+              <p>
+                On our side every trace is cleaned automatically: secret
+                patterns are redacted, home paths are anonymized, and quality
+                gates reject sessions that are not worth training on. A scrub
+                report on every trace shows exactly what was removed.
+              </p>
+            }
+            terminal={["# watch your vault", "# Received → Cleaning → Ready"]}
+          />
+        </div>
+
+        <div className="border-b border-border">
+          <div className="mx-auto max-w-5xl px-6 py-16">
+            <Eyebrow>Trace statuses</Eyebrow>
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight">
+              What each status means
+            </h2>
+            <div className="mt-8 grid gap-8 md:grid-cols-3">
+              <div>
+                <StatusBadge status="uploaded" />
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  Arrived intact and stored. Waiting for the scrubber to pick
+                  it up, usually under a minute.
+                </p>
+              </div>
+              <div>
+                <StatusBadge status="scrubbing" />
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  Being cleaned: secrets redacted, paths anonymized, quality
+                  gates running.
+                </p>
+              </div>
+              <div>
+                <StatusBadge status="scrubbed" />
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  Training-ready. Cleaned, gated, and eligible for packs.
+                  Rejected traces show the reason instead.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <Section className="text-center">
+          <h2 className="mx-auto max-w-xl text-3xl font-semibold tracking-tight text-balance">
+            Ready to sell your first trace?
+          </h2>
+          <div className="mt-8 flex justify-center">
+            <PrimaryCta />
+          </div>
+        </Section>
+      </main>
+
+      <Footer />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Routes                                                             */
 /*  /           landing (sign-in via modal, sign-up via /sign-up)      */
 /*  /sign-up    Clerk sign-up page; signed-in users go to /dashboard   */
@@ -1482,6 +1671,10 @@ function Routes() {
 
   if (path === "/cli/auth") {
     return <DeviceApprove />;
+  }
+
+  if (path === "/how") {
+    return <HowPage />;
   }
 
   return <Landing />;
