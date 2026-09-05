@@ -340,6 +340,14 @@ function ForLabs() {
         cannot be trusted, and rights are unclear. Every trace on OpenTraces
         solves all three.
       </p>
+      <div className="mt-8">
+        <Button variant="outline" asChild className="group">
+          <Link to="/marketplace">
+            Browse the marketplace
+            <ArrowRight className="transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        </Button>
+      </div>
       <div className="mt-16 grid gap-12 md:grid-cols-3">
         {guarantees.map((g) => (
           <div key={g.title}>
@@ -469,6 +477,9 @@ function Footer() {
             <span>built on the pi coding agent</span>
           </div>
           <div className="flex gap-6">
+            <Link to="/marketplace" className="hover:text-foreground">
+              Marketplace
+            </Link>
             <Link to="/how" className="hover:text-foreground">
               How it works
             </Link>
