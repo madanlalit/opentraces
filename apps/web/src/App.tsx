@@ -60,7 +60,6 @@ function Nav() {
           <SignInButton mode="modal">
             <button className="hover:text-neutral-100">Sign in</button>
           </SignInButton>
-          <StartSellingButton />
         </nav>
       </div>
     </header>
@@ -76,12 +75,7 @@ function Hero() {
         className="pointer-events-none absolute inset-x-0 top-0 h-[480px] bg-[radial-gradient(60%_60%_at_50%_0%,rgba(255,255,255,0.07),transparent)]"
       />
       <div className="relative mx-auto max-w-6xl px-6 pt-20 pb-16 text-center sm:pt-28">
-        <span className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900/60 px-3 py-1 text-xs text-neutral-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          Live — ingesting pi coding-agent sessions
-        </span>
-
-        <h1 className="mx-auto mt-6 max-w-3xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl">
+        <h1 className="mx-auto max-w-3xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl">
           Your agent already did the work.
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg text-pretty text-neutral-400">
