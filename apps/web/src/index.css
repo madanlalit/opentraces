@@ -1,16 +1,28 @@
 @import "tailwindcss";
 
-/* Archivo (variable, 100–900) is the brand typeface — default for everything */
+/* Archivo (variable, 100–900) is the brand typeface — default for everything.
+   Instrument Serif italic is the editorial accent for single words. */
 @theme {
   --font-sans: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
 }
 
 html {
   scroll-behavior: smooth;
 }
 
-body {
-  font-family: var(--font-sans);
-  font-feature-settings: "ss01" on; /* alternate glyphs, cleaner numerals in tables */
-  -webkit-font-smoothing: antialiased;
+::selection {
+  background: #d1fae5; /* emerald-100 */
+}
+
+/* slow agents marquee (duplicate content = seamless loop) */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee 32s linear infinite;
+}
+.marquee-paused:hover .animate-marquee {
+  animation-play-state: paused;
 }
